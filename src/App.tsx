@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Package, ShoppingCart, ArrowRightLeft, Plus, Minus, Upload, ScanLine, Pencil, X, Bell, User, Barcode, LogOut, LayoutDashboard, Boxes, ReceiptText, Settings, HeadphonesIcon, AlertTriangle, ChevronDown, Globe } from 'lucide-react';
+import { Search, Package, ShoppingCart, ArrowRightLeft, Plus, Minus, Upload, ScanLine, Pencil, X, Bell, User, Barcode, LogOut, LayoutDashboard, Boxes, ReceiptText, Settings, HeadphonesIcon, AlertTriangle, ChevronDown, Globe, Trash2 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Auth from './components/Auth';
 import { useLanguage } from './contexts/LanguageContext';
