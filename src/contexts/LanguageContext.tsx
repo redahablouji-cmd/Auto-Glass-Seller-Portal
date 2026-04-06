@@ -136,6 +136,15 @@ export const translations = {
     deleteConfirmBody: 'Are you sure you want to permanently delete this item from your inventory? This action cannot be undone.',
     confirmDelete: 'Confirm Delete',
     itemDeletedSuccess: 'Item deleted successfully.',
+    orderDate: 'Order Date',
+    buyerName: 'Buyer Name',
+    totalPrice: 'Total Price',
+    viewPO: 'View PO',
+    accept: 'Accept',
+    reject: 'Reject',
+    orderAccepted: 'Order accepted successfully.',
+    orderRejected: 'Order rejected successfully.',
+    errorUpdatingOrder: 'Error updating order status.',
   },
   fr: {
     // Auth
@@ -270,6 +279,15 @@ export const translations = {
     deleteConfirmBody: 'Êtes-vous sûr de vouloir supprimer définitivement cet article de votre inventaire ? Cette action est irréversible.',
     confirmDelete: 'Confirmer la suppression',
     itemDeletedSuccess: 'Article supprimé avec succès.',
+    orderDate: 'Date de commande',
+    buyerName: 'Nom de l\'acheteur',
+    totalPrice: 'Prix total',
+    viewPO: 'Voir BC',
+    accept: 'Accepter',
+    reject: 'Rejeter',
+    orderAccepted: 'Commande acceptée avec succès.',
+    orderRejected: 'Commande rejetée avec succès.',
+    errorUpdatingOrder: 'Erreur lors de la mise à jour du statut de la commande.',
   }
 };
 

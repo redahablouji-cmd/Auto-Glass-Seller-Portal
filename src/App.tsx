@@ -63,11 +63,6 @@ const MOCK_INVENTORY = [
   { inventory_id: '3', master_sku: 'SKU-1003', quantity: 8, unit_price: 2100.00, manufacturer: 'Saint-Gobain Sekurit', universal_catalog: { make: 'Mercedes-Benz', model: 'C-Class', year: '2014-2021' } },
 ];
 
-const MOCK_ORDERS = [
-  { transaction_id: 'ORD-8832', master_sku: 'SKU-1001', quantity_ordered: 2, agreed_price: 2500.00, status: 'Requested', universal_catalog: { make: 'Toyota', model: 'Corolla' } },
-  { transaction_id: 'ORD-8835', master_sku: 'SKU-1002', quantity_ordered: 1, agreed_price: 850.00, status: 'Requested', universal_catalog: { make: 'Renault', model: 'Clio IV' } },
-];
-
 const MANUFACTURERS = ['Saint-Gobain Sekurit', 'Pilkington', 'AGC Automotive', 'XYG', 'Fuyao (FYG)', 'Benson', 'NordGlass', 'Guardian', 'Shatterprufe', 'Other'];
 const GLASS_POSITIONS = ['Front Windshield', 'Rear Window', 'Front Left Door', 'Front Right Door', 'Rear Left Door', 'Rear Right Door', 'Quarter Glass', 'Sunroof', 'Other'];
 
@@ -104,7 +99,7 @@ export default function App() {
   };
 
   const [inventory, setInventory] = useState(MOCK_INVENTORY);
-  const [orders, setOrders] = useState(MOCK_ORDERS);
+  const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(false);
 
@@ -237,12 +232,13 @@ export default function App() {
       const { data: ordData, error: ordError } = await supabase
         .from('order_ledger')
         .select(`
-          transaction_id, master_sku, quantity_ordered, agreed_price, status,
-          universal_catalog (make, model)
+          *,
+          live_inventory (make, model, year, position, manufacturer),
+          profiles!order_ledger_buyer_id_fkey (business_name)
         `)
-        .eq('seller_id', TEST_SELLER_ID)
-        .eq('status', 'Requested')
-        .order('transaction_id', { ascending: false });
+        .eq('seller_id', session.user.id)
+        .neq('status', 'Archived')
+        .order('created_at', { ascending: false });
       
       if (!ordError && ordData) setOrders(ordData as any);
     } catch (error) {
@@ -498,6 +494,37 @@ export default function App() {
       setInventory(inventory.map(item => 
         item.inventory_id === id ? { ...item, quantity: newQty } : item
       ));
+    }
+  };
+
+  const handleUpdateOrderStatus = async (orderId: string, newStatus: 'Accepted' | 'Rejected') => {
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase
+          .from('order_ledger')
+          .update({ status: newStatus })
+          .eq('id', orderId);
+
+        if (error) throw error;
+
+        // Update local state immediately
+        setOrders(prev => prev.map(order => 
+          order.id === orderId ? { ...order, status: newStatus } : order
+        ));
+        
+        setSuccessMessage(newStatus === 'Accepted' ? t.orderAccepted : t.orderRejected);
+        setTimeout(() => setSuccessMessage(null), 3000);
+      } catch (error) {
+        console.error('Error updating order status:', error);
+        alert(t.errorUpdatingOrder);
+      }
+    } else {
+      // Mock update
+      setOrders(prev => prev.map(order => 
+        order.id === orderId ? { ...order, status: newStatus } : order
+      ));
+      setSuccessMessage(newStatus === 'Accepted' ? t.orderAccepted : t.orderRejected);
+      setTimeout(() => setSuccessMessage(null), 3000);
     }
   };
 
@@ -1215,34 +1242,78 @@ export default function App() {
               <div className="text-center py-8 text-slate-500 bg-white/50 rounded-3xl border border-slate-200">{t.noPendingOrders}</div>
             ) : (
               orders.map((order) => (
-                <div key={order.transaction_id} className="bg-white/70 backdrop-blur-md border border-white/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_4px_25px_rgb(0,0,0,0.06)] transition-all">
-                  <div className="flex items-center gap-4">
+                <div key={order.id} className="bg-white/70 backdrop-blur-md border border-white/60 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_4px_25px_rgb(0,0,0,0.06)] transition-all">
+                  <div className="flex items-center gap-4 flex-1">
                     <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center border border-indigo-100 shrink-0">
                       <ShoppingCart className="w-5 h-5 text-indigo-500" />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-0.5">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
                         <span className="font-mono text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{order.transaction_id}</span>
-                        <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                          order.status === 'Accepted' ? 'text-green-600 bg-green-50 border-green-200' :
+                          order.status === 'Rejected' ? 'text-red-600 bg-red-50 border-red-200' :
+                          'text-amber-600 bg-amber-50 border-amber-200'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            order.status === 'Accepted' ? 'bg-green-500' :
+                            order.status === 'Rejected' ? 'bg-red-500' :
+                            'bg-amber-500'
+                          }`}></span>
                           {order.status}
                         </span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {new Date(order.created_at).toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
                       </div>
-                      <h3 className="font-bold text-slate-800 text-base">
-                        {order.universal_catalog?.make} {order.universal_catalog?.model}
+                      <h3 className="font-bold text-slate-800 text-base truncate">
+                        {order.profiles?.business_name || t.unknown}
                       </h3>
-                      <p className="text-sm text-slate-500 mt-0.5 flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                        <p className="text-sm text-slate-600 font-medium">
+                          {order.live_inventory?.make} {order.live_inventory?.model} ({order.live_inventory?.year})
+                        </p>
+                        <span className="hidden sm:inline w-1 h-1 rounded-full bg-slate-300"></span>
+                        <p className="text-sm text-slate-500">
+                          {lang === 'fr' ? (positionTranslations[order.live_inventory?.position] || order.live_inventory?.position) : order.live_inventory?.position}
+                        </p>
+                      </div>
+                      <p className="text-sm text-slate-500 mt-1 flex items-center gap-2">
                         <span>{t.qty}: <strong className="text-slate-700">{order.quantity_ordered}</strong></span>
                         <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-                        <span className="font-bold text-indigo-600">{order.agreed_price.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD</span>
+                        <span className="font-bold text-indigo-600">{(order.agreed_price * order.quantity_ordered).toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD</span>
                       </p>
                     </div>
                   </div>
                   
-                  <button className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-cyan-700 py-2.5 px-5 rounded-xl text-sm font-bold transition-all border border-cyan-200 hover:border-cyan-300 shadow-sm w-full sm:w-auto group">
-                    <Upload className="w-4 h-4 text-cyan-500 group-hover:-translate-y-0.5 transition-transform" />
-                    {t.uploadBonDeCommande}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    {order.po_file_url && (
+                      <button 
+                        onClick={() => window.open(order.po_file_url, '_blank')}
+                        className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-cyan-700 py-2 px-4 rounded-xl text-xs font-bold transition-all border border-cyan-200 hover:border-cyan-300 shadow-sm group"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-cyan-500 group-hover:-translate-y-0.5 transition-transform" />
+                        {t.viewPO}
+                      </button>
+                    )}
+                    
+                    {order.status === 'Requested' && (
+                      <>
+                        <button 
+                          onClick={() => handleUpdateOrderStatus(order.id, 'Accepted')}
+                          className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-xl text-xs font-bold transition-all shadow-sm shadow-green-200"
+                        >
+                          {t.accept}
+                        </button>
+                        <button 
+                          onClick={() => handleUpdateOrderStatus(order.id, 'Rejected')}
+                          className="flex items-center justify-center gap-2 bg-white hover:bg-red-50 text-red-600 py-2 px-4 rounded-xl text-xs font-bold transition-all border border-red-200 hover:border-red-300 shadow-sm"
+                        >
+                          {t.reject}
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))
             )}
