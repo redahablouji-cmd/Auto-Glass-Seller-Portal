@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Building2, UserCircle, Lock, Mail, Phone, MapPin, Upload, Briefcase, ArrowRight, Loader2, FileText } from 'lucide-react';
+import { Building2, UserCircle, Lock, Mail, Phone, MapPin, Upload, Briefcase, ArrowRight, Loader2, FileText, Globe } from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mock.supabase.co';
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'mock-key';
@@ -11,6 +12,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const { lang, setLang, t } = useLanguage();
 
   // Login state
   const [businessCode, setBusinessCode] = useState('');
@@ -41,7 +43,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
 
       if (rpcError) throw rpcError;
       if (!emailData) {
-        throw new Error('Business Code not found');
+        throw new Error(t.businessCodeNotFound);
       }
 
       // Step 2: Sign in with email and password
@@ -50,13 +52,18 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
         password: loginPassword,
       });
 
-      if (signInError) throw signInError;
+      if (signInError) {
+        if (signInError.message.includes('Invalid login credentials')) {
+          throw new Error(t.invalidCredentials);
+        }
+        throw signInError;
+      }
       
       if (data.session) {
         onLogin(data.session);
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred during login.');
+      setError(err.message || t.loginError);
     } finally {
       setLoading(false);
     }
@@ -68,12 +75,12 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
     setSuccess(null);
 
     if (registerPassword !== confirmPassword) {
-      setError('Passwords do not match');
+      setError(t.passwordsDoNotMatch);
       return;
     }
 
     if (!rcFile) {
-      setError('Please upload your Registre de Commerce (RC)');
+      setError(t.uploadRCError);
       return;
     }
 
@@ -115,7 +122,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
 
       if (signUpError) throw signUpError;
 
-      setSuccess('Account created! Please check your email to verify your account before logging in.');
+      setSuccess(t.accountCreated);
       setIsLogin(true);
       
       // Reset form
@@ -130,7 +137,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
       setConfirmPassword('');
       
     } catch (err: any) {
-      setError(err.message || 'An error occurred during registration.');
+      setError(err.message || t.registerError);
     } finally {
       setLoading(false);
     }
@@ -138,6 +145,24 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
+      {/* Language Toggle */}
+      <div className="absolute top-4 right-4 z-50 flex items-center gap-2 bg-white/80 backdrop-blur-md px-3 py-1.5 rounded-full shadow-sm border border-slate-200">
+        <Globe className="w-4 h-4 text-slate-500" />
+        <button 
+          onClick={() => setLang('en')}
+          className={`text-sm font-medium transition-colors ${lang === 'en' ? 'text-cyan-600' : 'text-slate-400 hover:text-slate-600'}`}
+        >
+          EN
+        </button>
+        <span className="text-slate-300">|</span>
+        <button 
+          onClick={() => setLang('fr')}
+          className={`text-sm font-medium transition-colors ${lang === 'fr' ? 'text-cyan-600' : 'text-slate-400 hover:text-slate-600'}`}
+        >
+          FR
+        </button>
+      </div>
+
       {/* Decorative Background Elements */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-cyan-400/20 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none" />
@@ -149,10 +174,10 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
           </div>
         </div>
         <h2 className="mt-6 text-center text-3xl font-extrabold text-slate-900 tracking-tight">
-          {isLogin ? 'Log in to your account' : 'Register your business'}
+          {isLogin ? t.loginTitle : t.registerTitle}
         </h2>
         <p className="mt-2 text-center text-sm text-slate-600">
-          {isLogin ? 'Welcome back to the B2B portal' : 'Join our B2B network today'}
+          {isLogin ? t.loginSubtitle : t.registerSubtitle}
         </p>
       </div>
 
@@ -193,7 +218,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
             <form className="space-y-6" onSubmit={handleLogin}>
               <div>
                 <label htmlFor="businessCode" className="block text-sm font-medium text-slate-700">
-                  Business Code
+                  {t.businessCode}
                 </label>
                 <div className="mt-1 relative rounded-xl shadow-sm">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -207,14 +232,14 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
                     value={businessCode}
                     onChange={(e) => setBusinessCode(e.target.value)}
                     className="focus:ring-cyan-500 focus:border-cyan-500 block w-full pl-10 sm:text-sm border-slate-300 rounded-xl py-3 bg-slate-50 border text-slate-900"
-                    placeholder="e.g., SCASAAUTO28CASA"
+                    placeholder={t.businessCodePlaceholder}
                   />
                 </div>
               </div>
 
               <div>
                 <label htmlFor="loginPassword" className="block text-sm font-medium text-slate-700">
-                  Password
+                  {t.password}
                 </label>
                 <div className="mt-1 relative rounded-xl shadow-sm">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -243,7 +268,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
                     <Loader2 className="w-5 h-5 animate-spin" />
                   ) : (
                     <>
-                      Log In <ArrowRight className="ml-2 w-4 h-4" />
+                      {t.loginBtn} <ArrowRight className="ml-2 w-4 h-4" />
                     </>
                   )}
                 </button>
@@ -254,7 +279,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
               <div className="grid grid-cols-1 gap-y-5 gap-x-4 sm:grid-cols-2">
                 <div className="sm:col-span-2">
                   <label htmlFor="businessName" className="block text-sm font-medium text-slate-700">
-                    Business Name
+                    {t.businessName}
                   </label>
                   <div className="mt-1 relative rounded-xl shadow-sm">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -274,7 +299,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
 
                 <div>
                   <label htmlFor="ownerName" className="block text-sm font-medium text-slate-700">
-                    Owner Name
+                    {t.ownerName}
                   </label>
                   <div className="mt-1 relative rounded-xl shadow-sm">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -294,7 +319,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
 
                 <div>
                   <label htmlFor="role" className="block text-sm font-medium text-slate-700">
-                    Role
+                    {t.role}
                   </label>
                   <div className="mt-1 relative rounded-xl shadow-sm">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -307,15 +332,15 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
                       onChange={(e) => setRole(e.target.value)}
                       className="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 sm:text-sm border-slate-300 rounded-xl py-2.5 bg-slate-50 border text-slate-900"
                     >
-                      <option value="Buyer">Buyer</option>
-                      <option value="Seller">Seller</option>
+                      <option value="Buyer">{t.buyer}</option>
+                      <option value="Seller">{t.seller}</option>
                     </select>
                   </div>
                 </div>
 
                 <div>
                   <label htmlFor="email" className="block text-sm font-medium text-slate-700">
-                    Email Address
+                    {t.email}
                   </label>
                   <div className="mt-1 relative rounded-xl shadow-sm">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -335,7 +360,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
 
                 <div>
                   <label htmlFor="phone" className="block text-sm font-medium text-slate-700">
-                    Phone Number
+                    {t.phone}
                   </label>
                   <div className="mt-1 relative rounded-xl shadow-sm">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -355,7 +380,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
 
                 <div className="sm:col-span-2">
                   <label htmlFor="address" className="block text-sm font-medium text-slate-700">
-                    Address
+                    {t.address}
                   </label>
                   <div className="mt-1 relative rounded-xl shadow-sm">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -375,7 +400,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
 
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-slate-700">
-                    Registre de Commerce (RC)
+                    {t.uploadRC}
                   </label>
                   <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors">
                     <div className="space-y-1 text-center">
@@ -413,7 +438,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
 
                 <div>
                   <label htmlFor="registerPassword" className="block text-sm font-medium text-slate-700">
-                    Password
+                    {t.password}
                   </label>
                   <div className="mt-1 relative rounded-xl shadow-sm">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -433,7 +458,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
 
                 <div>
                   <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-700">
-                    Confirm Password
+                    {t.confirmPassword}
                   </label>
                   <div className="mt-1 relative rounded-xl shadow-sm">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -461,7 +486,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
                   {loading ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
                   ) : (
-                    'Create Account'
+                    t.createAccountBtn
                   )}
                 </button>
               </div>
@@ -488,7 +513,7 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
                 }}
                 className="font-medium text-indigo-600 hover:text-indigo-500 transition-colors"
               >
-                {isLogin ? 'New here? Register your business.' : 'Already registered? Log In here.'}
+                {isLogin ? t.newHere : t.alreadyRegistered}
               </button>
             </div>
           </div>

@@ -4,9 +4,10 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Package, ShoppingCart, ArrowRightLeft, Plus, Minus, Upload, ScanLine, Pencil, X, Bell, User, Barcode, LogOut, LayoutDashboard, Boxes, ReceiptText, Settings, HeadphonesIcon, AlertTriangle, ChevronDown } from 'lucide-react';
+import { Search, Package, ShoppingCart, ArrowRightLeft, Plus, Minus, Upload, ScanLine, Pencil, X, Bell, User, Barcode, LogOut, LayoutDashboard, Boxes, ReceiptText, Settings, HeadphonesIcon, AlertTriangle, ChevronDown, Globe } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Auth from './components/Auth';
+import { useLanguage } from './contexts/LanguageContext';
 
 // Initialize Supabase client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mock.supabase.co';
@@ -70,9 +71,37 @@ const MOCK_ORDERS = [
 const MANUFACTURERS = ['Saint-Gobain Sekurit', 'Pilkington', 'AGC Automotive', 'XYG', 'Fuyao (FYG)', 'Benson', 'NordGlass', 'Guardian', 'Shatterprufe', 'Other'];
 const GLASS_POSITIONS = ['Front Windshield', 'Rear Window', 'Front Left Door', 'Front Right Door', 'Rear Left Door', 'Rear Right Door', 'Quarter Glass', 'Sunroof', 'Other'];
 
+const positionTranslations: Record<string, string> = {
+  "Front Windshield": "Pare-brise avant",
+  "Rear Window": "Lunette arrière",
+  "Front Left Door": "Vitre porte avant gauche",
+  "Front Right Door": "Vitre porte avant droite",
+  "Rear Left Door": "Vitre porte arrière gauche",
+  "Rear Right Door": "Vitre porte arrière droite",
+  "Quarter Glass": "Custode",
+  "Sunroof": "Toit ouvrant",
+  "Other": "Autre"
+};
+
 export default function App() {
+  const { lang, setLang, t } = useLanguage();
   const [session, setSession] = useState<any>(null);
   const TEST_SELLER_ID = session?.user?.id || 'a1111111-1111-1111-1111-111111111111';
+
+  const getTranslatedPosition = (pos: string) => {
+    switch(pos) {
+      case 'Front Windshield': return t.posFrontWindshield;
+      case 'Rear Window': return t.posRearWindow;
+      case 'Front Left Door': return t.posFrontLeftDoor;
+      case 'Front Right Door': return t.posFrontRightDoor;
+      case 'Rear Left Door': return t.posRearLeftDoor;
+      case 'Rear Right Door': return t.posRearRightDoor;
+      case 'Quarter Glass': return t.posQuarterGlass;
+      case 'Sunroof': return t.posSunroof;
+      case 'Other': return t.posOther;
+      default: return pos;
+    }
+  };
 
   const [inventory, setInventory] = useState(MOCK_INVENTORY);
   const [orders, setOrders] = useState(MOCK_ORDERS);
@@ -122,6 +151,11 @@ export default function App() {
   const [editCustomManufacturer, setEditCustomManufacturer] = useState('');
   const [editPosition, setEditPosition] = useState('');
   const [editCustomPosition, setEditCustomPosition] = useState('');
+
+  // Delete Modal State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Profile Dropdown State
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
@@ -512,6 +546,37 @@ export default function App() {
     setIsEditModalOpen(true);
   };
 
+  const handleDeleteConfirm = async () => {
+    if (!editingItem || !isSupabaseConfigured) return;
+    
+    setIsDeleting(true);
+    try {
+      const { error } = await supabase
+        .from('live_inventory')
+        .delete()
+        .eq('inventory_id', editingItem.inventory_id);
+
+      if (error) throw error;
+
+      // Update local state
+      setInventory(prev => prev.filter(item => item.inventory_id !== editingItem.inventory_id));
+      
+      // Close modals
+      setIsDeleteModalOpen(false);
+      setIsEditModalOpen(false);
+      
+      // Show success toast
+      setSuccessMessage(t.itemDeletedSuccess);
+      setTimeout(() => setSuccessMessage(null), 3000);
+      
+    } catch (error) {
+      console.error('Error deleting item:', error);
+      alert(t.deleteError || 'An error occurred while deleting the item.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleMoveVehicle = async () => {
     if (!editingItem || !isSupabaseConfigured) return;
     
@@ -654,10 +719,28 @@ export default function App() {
               <Package className="w-5 h-5 text-white" />
             </div>
             <h1 className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-800 to-slate-600">
-              AutoGlass Portal
+              {t.appTitle}
             </h1>
           </div>
           <div className="flex items-center gap-4">
+            {/* Language Toggle */}
+            <div className="hidden sm:flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200">
+              <Globe className="w-4 h-4 text-slate-500" />
+              <button 
+                onClick={() => setLang('en')}
+                className={`text-xs font-bold transition-colors ${lang === 'en' ? 'text-cyan-600' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                EN
+              </button>
+              <span className="text-slate-300">|</span>
+              <button 
+                onClick={() => setLang('fr')}
+                className={`text-xs font-bold transition-colors ${lang === 'fr' ? 'text-cyan-600' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                FR
+              </button>
+            </div>
+
             <button className="relative p-2 text-slate-500 hover:text-cyan-600 transition-colors rounded-full hover:bg-white/50">
               <Bell className="w-5 h-5" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-cyan-500 rounded-full border-2 border-white"></span>
@@ -694,7 +777,7 @@ export default function App() {
                             {userProfile?.business_name || 'Business Name'}
                           </div>
                           <div className="text-sm text-slate-500 mt-1">
-                            {userProfile?.role || 'Role'}
+                            {userProfile?.role ? (lang === 'fr' ? (userProfile.role === 'Buyer' ? t.buyer : t.seller) : userProfile.role) : 'Role'}
                           </div>
                         </>
                       )}
@@ -703,19 +786,19 @@ export default function App() {
                     {/* Quick Links */}
                     <div className="p-2">
                       <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg transition-colors text-left">
-                        <LayoutDashboard className="w-4 h-4" /> Dashboard
+                        <LayoutDashboard className="w-4 h-4" /> {t.dashboard}
                       </button>
                       <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg transition-colors text-left">
-                        <Boxes className="w-4 h-4" /> My Inventory
+                        <Boxes className="w-4 h-4" /> {t.myInventory}
                       </button>
                       <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg transition-colors text-left">
-                        <ReceiptText className="w-4 h-4" /> Order Ledger
+                        <ReceiptText className="w-4 h-4" /> {t.orderLedger}
                       </button>
                       <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg transition-colors text-left">
-                        <Settings className="w-4 h-4" /> Preferences
+                        <Settings className="w-4 h-4" /> {t.preferences}
                       </button>
                       <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg transition-colors text-left">
-                        <HeadphonesIcon className="w-4 h-4" /> Help & Support
+                        <HeadphonesIcon className="w-4 h-4" /> {t.helpSupport}
                       </button>
                     </div>
 
@@ -728,7 +811,7 @@ export default function App() {
                         }}
                         className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors text-left font-medium"
                       >
-                        <AlertTriangle className="w-4 h-4" /> Request Credential Change
+                        <AlertTriangle className="w-4 h-4" /> {t.requestCredentialChange}
                       </button>
                     </div>
 
@@ -738,7 +821,7 @@ export default function App() {
                         onClick={() => supabase.auth.signOut()}
                         className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-colors text-left"
                       >
-                        <LogOut className="w-4 h-4" /> Log Out
+                        <LogOut className="w-4 h-4" /> {t.logOut}
                       </button>
                     </div>
                   </div>
@@ -756,8 +839,8 @@ export default function App() {
           <div className="bg-white/70 backdrop-blur-md border border-cyan-200/50 rounded-2xl p-4 flex items-start gap-3 text-sm text-cyan-800 shadow-sm">
             <div className="mt-0.5">ℹ️</div>
             <div>
-              <p className="font-semibold text-cyan-900">Running in Demo Mode</p>
-              <p className="opacity-80 mt-1">Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to connect to your live database.</p>
+              <p className="font-semibold text-cyan-900">{t.runningDemoMode}</p>
+              <p className="opacity-80 mt-1">{t.demoModeDesc}</p>
             </div>
           </div>
         )}
@@ -768,7 +851,7 @@ export default function App() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
               <h2 className="text-xl font-bold flex items-center gap-2 text-slate-800">
                 <Barcode className="w-6 h-6 text-cyan-500" />
-                Smart Scanner
+                {t.smartScanner}
               </h2>
               
               {/* Action Toggle */}
@@ -782,7 +865,7 @@ export default function App() {
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  Add to Inventory (+)
+                  {t.addToInventory}
                 </button>
                 <button 
                   type="button"
@@ -793,7 +876,7 @@ export default function App() {
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  Sold Offline (-)
+                  {t.soldOffline}
                 </button>
               </div>
             </div>
@@ -824,7 +907,7 @@ export default function App() {
                     }
                   }}
                   className="block w-full pl-12 pr-32 py-4 border border-slate-200 rounded-2xl bg-white/50 text-slate-800 text-lg placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400 transition-all shadow-inner"
-                  placeholder="Scan Factory Barcode (Auto-focus)"
+                  placeholder={t.scanBarcodePlaceholder}
                   required
                 />
                 <div className="absolute inset-y-0 right-0 pr-4 flex items-center">
@@ -837,7 +920,7 @@ export default function App() {
                         : 'text-slate-500 bg-slate-100 border-slate-200 hover:bg-slate-200 hover:text-slate-700'
                     }`}
                   >
-                    {isScanning ? 'Scanning...' : 'USB Ready'}
+                    {isScanning ? t.scanning : t.usbReady}
                   </button>
                 </div>
               </div>
@@ -850,7 +933,7 @@ export default function App() {
                       <div className="flex items-center gap-2 mb-2">
                         <div className="w-2 h-2 rounded-full bg-amber-500"></div>
                         <p className="text-sm font-bold text-slate-700">
-                          Multiple matches found for this barcode. Select the correct vehicle:
+                          {t.multipleMatches}
                         </p>
                       </div>
                       <select
@@ -861,7 +944,7 @@ export default function App() {
                         className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400"
                         defaultValue=""
                       >
-                        <option value="" disabled>Select Vehicle</option>
+                        <option value="" disabled>{t.selectVehicle}</option>
                         {barcodeMatches.map(match => {
                           const cat = Array.isArray(match.universal_catalog) ? match.universal_catalog[0] : match.universal_catalog;
                           return (
@@ -878,7 +961,7 @@ export default function App() {
                         <div className="flex items-center gap-2">
                           <div className={`w-2 h-2 rounded-full ${isRecognized ? 'bg-green-500' : 'bg-amber-500'}`}></div>
                           <p className="text-sm font-bold text-slate-700">
-                            {isRecognized ? 'Recognized Part (Verify Details):' : 'New Part Detected. Please categorize:'}
+                            {isRecognized ? t.recognizedPart : t.newPartDetected}
                           </p>
                         </div>
                         {isRecognized && !isOverridingMatch && (
@@ -887,7 +970,7 @@ export default function App() {
                             onClick={handleOverride}
                             className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline decoration-indigo-300 underline-offset-2"
                           >
-                            Incorrect Vehicle? Change Match
+                            {t.incorrectVehicle}
                           </button>
                         )}
                       </div>
@@ -902,7 +985,7 @@ export default function App() {
                         ) : (
                           <>
                             <div>
-                              <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Brand</label>
+                              <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.brand}</label>
                               <select
                                 value={selectedBrand}
                                 onChange={(e) => {
@@ -913,18 +996,18 @@ export default function App() {
                                 className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400"
                                 required
                               >
-                                <option value="" disabled>Select Brand</option>
+                                <option value="" disabled>{t.selectBrand}</option>
                                 {Object.keys(CAR_CATALOG).map(brand => (
                                   <option key={brand} value={brand}>{brand}</option>
                                 ))}
-                                <option value="OTHER">[ + Other / Not in List ]</option>
+                                <option value="OTHER">{t.otherNotInList}</option>
                               </select>
                             </div>
                             
                             {selectedBrand !== 'OTHER' && (
                               <>
                                 <div>
-                                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Model</label>
+                                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.model}</label>
                                   <select
                                     value={selectedModel}
                                     onChange={(e) => {
@@ -935,7 +1018,7 @@ export default function App() {
                                     className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400 disabled:opacity-50"
                                     required
                                   >
-                                    <option value="" disabled>Select Model</option>
+                                    <option value="" disabled>{t.selectModel}</option>
                                     {selectedBrand && CAR_CATALOG[selectedBrand] && Object.keys(CAR_CATALOG[selectedBrand]).map(model => (
                                       <option key={model} value={model}>{model}</option>
                                     ))}
@@ -943,7 +1026,7 @@ export default function App() {
                                 </div>
                                 
                                 <div>
-                                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Year Range</label>
+                                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.yearRange}</label>
                                   <select
                                     value={selectedYear}
                                     onChange={(e) => setSelectedYear(e.target.value)}
@@ -951,7 +1034,7 @@ export default function App() {
                                     className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400 disabled:opacity-50"
                                     required
                                   >
-                                    <option value="" disabled>Select Year</option>
+                                    <option value="" disabled>{t.selectYear}</option>
                                     {selectedBrand && selectedModel && CAR_CATALOG[selectedBrand]?.[selectedModel]?.map(year => (
                                       <option key={year} value={year}>{year}</option>
                                     ))}
@@ -963,14 +1046,14 @@ export default function App() {
                         )}
                         
                         <div>
-                          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Manufacturer</label>
+                          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.manufacturer}</label>
                           <select
                             value={selectedManufacturer}
                             onChange={(e) => setSelectedManufacturer(e.target.value)}
                             className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400"
                             required
                           >
-                            <option value="" disabled>Select Manufacturer</option>
+                            <option value="" disabled>{t.selectManufacturer}</option>
                             {MANUFACTURERS.map(mfg => (
                               <option key={mfg} value={mfg}>{mfg}</option>
                             ))}
@@ -978,16 +1061,16 @@ export default function App() {
                         </div>
                         
                         <div>
-                          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Glass Position</label>
+                          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.glassPosition}</label>
                           <select
                             value={selectedPosition}
                             onChange={(e) => setSelectedPosition(e.target.value)}
                             className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400"
                             required
                           >
-                            <option value="" disabled>Select Position</option>
+                            <option value="" disabled>{t.selectPosition}</option>
                             {GLASS_POSITIONS.map(pos => (
-                              <option key={pos} value={pos}>{pos}</option>
+                              <option key={pos} value={pos}>{getTranslatedPosition(pos)}</option>
                             ))}
                           </select>
                         </div>
@@ -996,12 +1079,12 @@ export default function App() {
                       {selectedBrand === 'OTHER' && (
                         <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-4">
                           <p className="text-xs font-semibold text-amber-700 flex items-center gap-1">
-                            ⚠️ Please ensure spelling is correct before saving.
+                            {t.ensureSpelling}
                           </p>
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <input
                               type="text"
-                              placeholder="Custom Brand"
+                              placeholder={t.customBrand}
                               value={customBrand}
                               onChange={(e) => setCustomBrand(e.target.value)}
                               className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
@@ -1009,7 +1092,7 @@ export default function App() {
                             />
                             <input
                               type="text"
-                              placeholder="Custom Model"
+                              placeholder={t.customModel}
                               value={customModel}
                               onChange={(e) => setCustomModel(e.target.value)}
                               className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
@@ -1017,7 +1100,7 @@ export default function App() {
                             />
                             <input
                               type="text"
-                              placeholder="Custom Year"
+                              placeholder={t.customYear}
                               value={customYear}
                               onChange={(e) => setCustomYear(e.target.value)}
                               className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
@@ -1030,11 +1113,11 @@ export default function App() {
                       {selectedManufacturer === 'Other' && (
                         <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl mt-4">
                           <p className="text-xs font-semibold text-amber-700 flex items-center gap-1 mb-3">
-                            ⚠️ Please ensure manufacturer spelling is correct.
+                            {t.ensureMfgSpelling}
                           </p>
                           <input
                             type="text"
-                            placeholder="Custom Manufacturer Name"
+                            placeholder={t.customManufacturerName}
                             value={customManufacturer}
                             onChange={(e) => setCustomManufacturer(e.target.value)}
                             className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
@@ -1046,11 +1129,11 @@ export default function App() {
                       {selectedPosition === 'Other' && (
                         <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl mt-4">
                           <p className="text-xs font-semibold text-amber-700 flex items-center gap-1 mb-3">
-                            ⚠️ Please ensure position spelling is correct.
+                            {t.ensurePosSpelling}
                           </p>
                           <input
                             type="text"
-                            placeholder="Custom Position Name"
+                            placeholder={t.customPositionName}
                             value={customPosition}
                             onChange={(e) => setCustomPosition(e.target.value)}
                             className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
@@ -1065,7 +1148,7 @@ export default function App() {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="sm:col-span-1">
-                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Quantity</label>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.quantity}</label>
                   <input
                     ref={quantityInputRef}
                     type="number"
@@ -1079,7 +1162,7 @@ export default function App() {
                 </div>
                 <div className="sm:col-span-1">
                   <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">
-                    {scanAction === 'add' ? 'Unit Price (MAD)' : 'Sale Price (MAD)'}
+                    {scanAction === 'add' ? t.unitPriceMad : t.salePriceMad}
                   </label>
                   <input
                     type="number"
@@ -1105,7 +1188,7 @@ export default function App() {
                     }`}
                   >
                     {scanAction === 'add' ? <Plus className="w-5 h-5" /> : <ArrowRightLeft className="w-5 h-5" />}
-                    {scanAction === 'add' ? 'Execute Insert' : 'Execute Update'}
+                    {scanAction === 'add' ? t.executeInsert : t.executeUpdate}
                   </button>
                 </div>
               </div>
@@ -1118,7 +1201,7 @@ export default function App() {
           <div className="flex items-center justify-between mb-4 px-2">
             <h2 className="text-lg font-bold flex items-center gap-2 text-slate-800">
               <ShoppingCart className="w-5 h-5 text-indigo-500" />
-              Pending Orders
+              {t.pendingOrders}
               <span className="bg-indigo-100 text-indigo-700 text-xs py-0.5 px-2.5 rounded-full font-bold ml-2 border border-indigo-200">
                 {orders.length}
               </span>
@@ -1127,9 +1210,9 @@ export default function App() {
           
           <div className="grid gap-3">
             {loading ? (
-              <div className="text-center py-8 text-slate-500">Loading orders...</div>
+              <div className="text-center py-8 text-slate-500">{t.loadingOrders}</div>
             ) : orders.length === 0 ? (
-              <div className="text-center py-8 text-slate-500 bg-white/50 rounded-3xl border border-slate-200">No pending orders.</div>
+              <div className="text-center py-8 text-slate-500 bg-white/50 rounded-3xl border border-slate-200">{t.noPendingOrders}</div>
             ) : (
               orders.map((order) => (
                 <div key={order.transaction_id} className="bg-white/70 backdrop-blur-md border border-white/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_4px_25px_rgb(0,0,0,0.06)] transition-all">
@@ -1149,7 +1232,7 @@ export default function App() {
                         {order.universal_catalog?.make} {order.universal_catalog?.model}
                       </h3>
                       <p className="text-sm text-slate-500 mt-0.5 flex items-center gap-2">
-                        <span>Qty: <strong className="text-slate-700">{order.quantity_ordered}</strong></span>
+                        <span>{t.qty}: <strong className="text-slate-700">{order.quantity_ordered}</strong></span>
                         <span className="w-1 h-1 rounded-full bg-slate-300"></span>
                         <span className="font-bold text-indigo-600">{order.agreed_price.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD</span>
                       </p>
@@ -1158,7 +1241,7 @@ export default function App() {
                   
                   <button className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-cyan-700 py-2.5 px-5 rounded-xl text-sm font-bold transition-all border border-cyan-200 hover:border-cyan-300 shadow-sm w-full sm:w-auto group">
                     <Upload className="w-4 h-4 text-cyan-500 group-hover:-translate-y-0.5 transition-transform" />
-                    Upload Bon de Commande
+                    {t.uploadBonDeCommande}
                   </button>
                 </div>
               ))
@@ -1171,13 +1254,13 @@ export default function App() {
           <div className="flex items-center justify-between mb-4 px-2">
             <h2 className="text-lg font-bold flex items-center gap-2 text-slate-800">
               <Package className="w-5 h-5 text-cyan-500" />
-              Active Inventory
+              {t.activeInventory}
             </h2>
             <div className="relative hidden sm:block">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input 
                 type="text" 
-                placeholder="Search catalog..." 
+                placeholder={t.searchCatalog}
                 className="pl-9 pr-4 py-2 bg-white/70 backdrop-blur-sm border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400 w-64 text-slate-800 placeholder-slate-400 shadow-sm transition-all"
               />
             </div>
@@ -1185,9 +1268,9 @@ export default function App() {
           
           <div className="bg-white/70 backdrop-blur-xl border border-white/60 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden">
             {loading ? (
-              <div className="text-center py-12 text-slate-500">Loading catalog...</div>
+              <div className="text-center py-12 text-slate-500">{t.loadingCatalog}</div>
             ) : inventory.length === 0 ? (
-              <div className="text-center py-12 text-slate-500">No active inventory found.</div>
+              <div className="text-center py-12 text-slate-500">{t.noActiveInventory}</div>
             ) : (
               <div className="divide-y divide-slate-100/80">
                 {inventory.map((item) => (
@@ -1201,18 +1284,18 @@ export default function App() {
                           onClick={() => openEditModal(item)}
                           className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-md border border-indigo-200 transition-colors"
                         >
-                          <Pencil className="w-3 h-3" /> Edit Vehicle
+                          <Pencil className="w-3 h-3" /> {t.editVehicle}
                         </button>
                       </div>
                       <h3 className="font-bold text-slate-800 text-lg truncate">
-                        {item.universal_catalog?.make} {item.universal_catalog?.model} <span className="text-slate-400 font-normal mx-1">|</span> <span className="text-slate-600">{item.position || 'Unknown Position'}</span> <span className="text-slate-400 font-normal mx-1">|</span> <span className="text-indigo-600">{item.manufacturer || 'Unknown'}</span>
+                        {item.universal_catalog?.make} {item.universal_catalog?.model} <span className="text-slate-400 font-normal mx-1">|</span> <span className="text-slate-600">{lang === 'fr' ? (positionTranslations[item.position] || item.position || t.unknownPosition) : (item.position || t.unknownPosition)}</span> <span className="text-slate-400 font-normal mx-1">|</span> <span className="text-indigo-600">{item.manufacturer || t.unknown}</span>
                       </h3>
                       <p className="text-sm text-slate-500 font-medium">{item.universal_catalog?.year}</p>
                     </div>
                     
                     <div className="flex items-center justify-between sm:justify-end gap-8">
                       <div className="text-left sm:text-right">
-                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Unit Price</div>
+                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-0.5">{t.unitPrice}</div>
                         <div className="font-bold text-slate-800 text-lg">
                           {item.unit_price.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} <span className="text-xs font-semibold text-slate-500">MAD</span>
                         </div>
@@ -1250,7 +1333,7 @@ export default function App() {
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                 <ArrowRightLeft className="w-5 h-5 text-indigo-500" />
-                Move Stock to Different Vehicle
+                {t.moveStock}
               </h3>
               <button 
                 onClick={() => setIsEditModalOpen(false)}
@@ -1262,14 +1345,14 @@ export default function App() {
             
             <div className="p-6 space-y-6">
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <p className="text-sm text-slate-500 mb-1">Moving Inventory:</p>
-                <p className="font-bold text-slate-800">{editingItem?.quantity}x {editingItem?.manufacturer || 'Unknown'} Windshields</p>
-                <p className="text-xs text-slate-400 mt-1">Currently assigned to: {editingItem?.master_sku}</p>
+                <p className="text-sm text-slate-500 mb-1">{t.movingInventory}</p>
+                <p className="font-bold text-slate-800">{editingItem?.quantity}x {editingItem?.manufacturer || t.unknown} {t.windshields}</p>
+                <p className="text-xs text-slate-400 mt-1">{t.currentlyAssignedTo} {editingItem?.master_sku}</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Brand</label>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.brand}</label>
                   <select
                     value={editBrand}
                     onChange={(e) => {
@@ -1280,18 +1363,18 @@ export default function App() {
                     className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
                     required
                   >
-                    <option value="" disabled>Select Brand</option>
+                    <option value="" disabled>{t.selectBrand}</option>
                     {Object.keys(CAR_CATALOG).map(brand => (
                       <option key={brand} value={brand}>{brand}</option>
                     ))}
-                    <option value="OTHER">[ + Other / Not in List ]</option>
+                    <option value="OTHER">{t.otherNotInList}</option>
                   </select>
                 </div>
                 
                 {editBrand !== 'OTHER' && (
                   <>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Model</label>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.model}</label>
                       <select
                         value={editModel}
                         onChange={(e) => {
@@ -1302,7 +1385,7 @@ export default function App() {
                         className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 disabled:opacity-50"
                         required
                       >
-                        <option value="" disabled>Select Model</option>
+                        <option value="" disabled>{t.selectModel}</option>
                         {editBrand && CAR_CATALOG[editBrand] && Object.keys(CAR_CATALOG[editBrand]).map(model => (
                           <option key={model} value={model}>{model}</option>
                         ))}
@@ -1310,7 +1393,7 @@ export default function App() {
                     </div>
                     
                     <div>
-                      <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Year Range</label>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.yearRange}</label>
                       <select
                         value={editYear}
                         onChange={(e) => setEditYear(e.target.value)}
@@ -1318,7 +1401,7 @@ export default function App() {
                         className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 disabled:opacity-50"
                         required
                       >
-                        <option value="" disabled>Select Year</option>
+                        <option value="" disabled>{t.selectYear}</option>
                         {editBrand && editModel && CAR_CATALOG[editBrand]?.[editModel]?.map(year => (
                           <option key={year} value={year}>{year}</option>
                         ))}
@@ -1331,12 +1414,12 @@ export default function App() {
               {editBrand === 'OTHER' && (
                 <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-4">
                   <p className="text-xs font-semibold text-amber-700 flex items-center gap-1">
-                    ⚠️ Please ensure spelling is correct before saving.
+                    {t.ensureSpelling}
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <input
                       type="text"
-                      placeholder="Custom Brand"
+                      placeholder={t.customBrand}
                       value={editCustomBrand}
                       onChange={(e) => setEditCustomBrand(e.target.value)}
                       className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
@@ -1344,7 +1427,7 @@ export default function App() {
                     />
                     <input
                       type="text"
-                      placeholder="Custom Model"
+                      placeholder={t.customModel}
                       value={editCustomModel}
                       onChange={(e) => setEditCustomModel(e.target.value)}
                       className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
@@ -1352,7 +1435,7 @@ export default function App() {
                     />
                     <input
                       type="text"
-                      placeholder="Custom Year"
+                      placeholder={t.customYear}
                       value={editCustomYear}
                       onChange={(e) => setEditCustomYear(e.target.value)}
                       className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
@@ -1365,14 +1448,14 @@ export default function App() {
               <div className="pt-4 border-t border-slate-100">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Manufacturer</label>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.manufacturer}</label>
                     <select
                       value={editManufacturer}
                       onChange={(e) => setEditManufacturer(e.target.value)}
                       className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
                       required
                     >
-                      <option value="" disabled>Select Manufacturer</option>
+                      <option value="" disabled>{t.selectManufacturer}</option>
                       {MANUFACTURERS.map(mfg => (
                         <option key={mfg} value={mfg}>{mfg}</option>
                       ))}
@@ -1380,16 +1463,16 @@ export default function App() {
                   </div>
                   
                   <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Glass Position</label>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.glassPosition}</label>
                     <select
                       value={editPosition}
                       onChange={(e) => setEditPosition(e.target.value)}
                       className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
                       required
                     >
-                      <option value="" disabled>Select Position</option>
+                      <option value="" disabled>{t.selectPosition}</option>
                       {GLASS_POSITIONS.map(pos => (
-                        <option key={pos} value={pos}>{pos}</option>
+                        <option key={pos} value={pos}>{getTranslatedPosition(pos)}</option>
                       ))}
                     </select>
                   </div>
@@ -1398,11 +1481,11 @@ export default function App() {
                 {editManufacturer === 'Other' && (
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl mt-4">
                     <p className="text-xs font-semibold text-amber-700 flex items-center gap-1 mb-3">
-                      ⚠️ Please ensure manufacturer spelling is correct.
+                      {t.ensureMfgSpelling}
                     </p>
                     <input
                       type="text"
-                      placeholder="Custom Manufacturer Name"
+                      placeholder={t.customManufacturerName}
                       value={editCustomManufacturer}
                       onChange={(e) => setEditCustomManufacturer(e.target.value)}
                       className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
@@ -1414,11 +1497,11 @@ export default function App() {
                 {editPosition === 'Other' && (
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl mt-4">
                     <p className="text-xs font-semibold text-amber-700 flex items-center gap-1 mb-3">
-                      ⚠️ Please ensure position spelling is correct.
+                      {t.ensurePosSpelling}
                     </p>
                     <input
                       type="text"
-                      placeholder="Custom Position Name"
+                      placeholder={t.customPositionName}
                       value={editCustomPosition}
                       onChange={(e) => setEditCustomPosition(e.target.value)}
                       className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
@@ -1430,7 +1513,7 @@ export default function App() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-100">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Quantity</label>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.quantity}</label>
                   <input
                     type="number"
                     min="0"
@@ -1441,7 +1524,7 @@ export default function App() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Unit Price (MAD)</label>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.unitPriceMad}</label>
                   <input
                     type="number"
                     min="0"
@@ -1455,23 +1538,87 @@ export default function App() {
               </div>
             </div>
             
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-between items-center gap-3">
               <button
-                onClick={() => setIsEditModalOpen(false)}
-                className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-200 rounded-xl transition-colors"
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="px-5 py-2.5 text-sm font-bold text-red-600 hover:text-red-700 hover:bg-red-50 rounded-xl transition-colors flex items-center gap-2"
               >
-                Cancel
+                <Trash2 className="w-4 h-4" />
+                {t.deleteItem}
+              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-200 rounded-xl transition-colors"
+                >
+                  {t.cancel}
+                </button>
+                <button
+                  onClick={handleMoveVehicle}
+                  disabled={
+                    editBrand === 'OTHER' 
+                      ? (!editCustomBrand || !editCustomModel || !editCustomYear)
+                      : (!editBrand || !editModel || !editYear)
+                  }
+                  className="px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {t.saveChanges}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-red-50/50">
+              <h2 className="text-xl font-bold text-red-600 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5" />
+                {t.deleteConfirmTitle}
+              </h2>
+              <button 
+                onClick={() => !isDeleting && setIsDeleteModalOpen(false)}
+                disabled={isDeleting}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <p className="text-slate-600 text-sm leading-relaxed">
+                {t.deleteConfirmBody}
+              </p>
+            </div>
+
+            <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(false)}
+                disabled={isDeleting}
+                className="px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-200/50 rounded-xl transition-colors disabled:opacity-50"
+              >
+                {t.cancel}
               </button>
               <button
-                onClick={handleMoveVehicle}
-                disabled={
-                  editBrand === 'OTHER' 
-                    ? (!editCustomBrand || !editCustomModel || !editCustomYear)
-                    : (!editBrand || !editModel || !editYear)
-                }
-                className="px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handleDeleteConfirm}
+                disabled={isDeleting}
+                className="px-5 py-2.5 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
-                Save Changes
+                {isDeleting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    {t.confirmDelete}...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    {t.confirmDelete}
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -1485,7 +1632,7 @@ export default function App() {
             <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50/50">
               <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-amber-500" />
-                Update Business Credentials
+                {t.updateBusinessCredentials}
               </h2>
               <button 
                 onClick={() => setIsCredentialModalOpen(false)}
@@ -1497,10 +1644,10 @@ export default function App() {
             
             <div className="p-6 space-y-4">
               <p className="text-slate-600 text-sm leading-relaxed">
-                For security and billing purposes, core business credentials cannot be changed automatically. Modifying your business name or address requires the generation of a new Business Code.
+                {t.credentialChangeBody1}
               </p>
               <p className="text-slate-600 text-sm leading-relaxed font-medium">
-                Please contact our Customer Support team to process this change safely.
+                {t.credentialChangeBody2}
               </p>
             </div>
 
@@ -1510,7 +1657,7 @@ export default function App() {
                 onClick={() => setIsCredentialModalOpen(false)}
                 className="px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-200/50 rounded-xl transition-colors"
               >
-                Cancel
+                {t.cancel}
               </button>
               <a
                 href="mailto:support@autoglassportal.com?subject=Request%20Credential%20Change"
@@ -1518,13 +1665,19 @@ export default function App() {
                 className="px-5 py-2.5 text-sm font-semibold text-white bg-cyan-600 hover:bg-cyan-700 rounded-xl transition-colors shadow-sm flex items-center gap-2"
               >
                 <HeadphonesIcon className="w-4 h-4" />
-                Contact Support
+                {t.contactSupport}
               </a>
             </div>
           </div>
         </div>
       )}
+      {/* Success Toast */}
+      {successMessage && (
+        <div className="fixed bottom-4 right-4 z-[100] bg-green-600 text-white px-6 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-in slide-in-from-bottom-5 fade-in duration-300">
+          <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+          <p className="font-semibold">{successMessage}</p>
+        </div>
+      )}
     </div>
   );
 }
-
