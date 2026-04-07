@@ -228,19 +228,38 @@ export default function App() {
       
       if (!invError && invData) setInventory(invData as any);
 
-      // Fetch orders
-      const { data: ordData, error: ordError } = await supabase
+      // Fetch orders manually to bypass failing relational joins
+      const { data: rawOrders, error: ordError } = await supabase
         .from('order_ledger')
-        .select(`
-          *,
-          live_inventory (make, model, year, position, manufacturer),
-          profiles!order_ledger_buyer_id_fkey (business_name)
-        `)
+        .select('*')
         .eq('seller_id', session.user.id)
         .neq('status', 'Archived')
         .order('created_at', { ascending: false });
       
-      if (!ordError && ordData) setOrders(ordData as any);
+      if (!ordError && rawOrders) {
+        const enrichedOrders = await Promise.all(rawOrders.map(async (order) => {
+          // Fetch Inventory Details manually
+          const { data: invDetails } = await supabase
+            .from('live_inventory')
+            .select('make, model, year, position, manufacturer')
+            .eq('inventory_id', order.inventory_id)
+            .maybeSingle();
+
+          // Fetch Buyer Details manually
+          const { data: buyerDetails } = await supabase
+            .from('profiles')
+            .select('business_name')
+            .eq('user_id', order.buyer_id)
+            .maybeSingle();
+
+          return {
+            ...order,
+            live_inventory: invDetails,
+            profiles: buyerDetails
+          };
+        }));
+        setOrders(enrichedOrders);
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
