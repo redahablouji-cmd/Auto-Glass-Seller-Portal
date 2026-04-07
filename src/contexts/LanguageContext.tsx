@@ -162,6 +162,8 @@ export const translations = {
     confirmCancellation: 'Confirm Cancellation',
     orderCancelledSuccess: 'Order cancelled successfully.',
     errorCancellingOrder: 'Error cancelling order.',
+    refCode: 'REF',
+    viewRefPhoto: 'View Reference Photo',
   },
   fr: {
     // Auth
@@ -322,6 +324,8 @@ export const translations = {
     confirmCancellation: 'Confirmer l\'annulation',
     orderCancelledSuccess: 'Commande annulée avec succès.',
     errorCancellingOrder: 'Erreur lors de l\'annulation de la commande.',
+    refCode: 'RÉF',
+    viewRefPhoto: 'Voir la photo de référence',
   }
 };
 

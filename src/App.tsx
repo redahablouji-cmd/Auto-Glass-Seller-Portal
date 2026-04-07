@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Package, ShoppingCart, ArrowRightLeft, Plus, Minus, Upload, ScanLine, Pencil, X, Bell, User, Barcode, LogOut, LayoutDashboard, Boxes, ReceiptText, Settings, HeadphonesIcon, AlertTriangle, ChevronDown, Globe, Trash2, AlertCircle, Clock, History } from 'lucide-react';
+import { Search, Package, ShoppingCart, ArrowRightLeft, Plus, Minus, Upload, ScanLine, Pencil, X, Bell, User, Barcode, LogOut, LayoutDashboard, Boxes, ReceiptText, Settings, HeadphonesIcon, AlertTriangle, ChevronDown, Globe, Trash2, AlertCircle, Clock, History, Image } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Auth from './components/Auth';
 import { useLanguage } from './contexts/LanguageContext';
@@ -358,6 +358,45 @@ const positionTranslations: Record<string, string> = {
   "Other": "Autre"
 };
 
+export interface OrderRecord {
+  id: string;
+  transaction_id: string;
+  created_at: string;
+  status: string;
+  quantity_ordered: number;
+  price?: number;
+  agreed_price?: number;
+  po_file_url?: string;
+  reference_code?: string;
+  request_photo_url?: string;
+  profiles?: {
+    business_name: string;
+  };
+  live_inventory?: {
+    make: string;
+    model: string;
+    year: string;
+    position: string;
+  };
+  [key: string]: any;
+}
+
+export interface InventoryItem {
+  inventory_id: string;
+  master_sku: string;
+  quantity: number;
+  unit_price: number;
+  manufacturer?: string;
+  position?: string;
+  reference_code?: string;
+  universal_catalog?: {
+    make?: string;
+    model?: string;
+    year?: string;
+  } | any[];
+  [key: string]: any;
+}
+
 export default function App() {
   const { lang, setLang, t } = useLanguage();
   const [session, setSession] = useState<any>(null);
@@ -378,9 +417,9 @@ export default function App() {
     }
   };
 
-  const [inventory, setInventory] = useState(MOCK_INVENTORY);
+  const [inventory, setInventory] = useState<InventoryItem[]>(MOCK_INVENTORY);
   const [inventorySearchQuery, setInventorySearchQuery] = useState('');
-  const [orders, setOrders] = useState<any[]>([]);
+  const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(false);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
@@ -409,6 +448,7 @@ export default function App() {
 
   const [quantity, setQuantity] = useState('1');
   const [price, setPrice] = useState('');
+  const [referenceCode, setReferenceCode] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const quantityInputRef = useRef<HTMLInputElement>(null);
@@ -446,9 +486,14 @@ export default function App() {
   const [isProfileLoading, setIsProfileLoading] = useState(true);
 
   useEffect(() => {
+    const url = import.meta.env.VITE_SUPABASE_URL;
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const hasConfig = url && key && url !== 'YOUR_SUPABASE_URL' && url !== 'mock.supabase.co' && url.startsWith('http');
+    if (!hasConfig) return;
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-    });
+    }).catch(e => console.error("Supabase getSession error:", e));
 
     const {
       data: { subscription },
@@ -461,18 +506,30 @@ export default function App() {
 
   useEffect(() => {
     const fetchProfile = async () => {
+      const url = import.meta.env.VITE_SUPABASE_URL;
+      const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const hasConfig = url && key && url !== 'YOUR_SUPABASE_URL' && url !== 'mock.supabase.co' && url.startsWith('http');
+      if (!hasConfig) {
+        setIsProfileLoading(false);
+        return;
+      }
+
       setIsProfileLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('business_name, role')
-          .eq('user_id', user.id)
-          .single();
-        
-        if (!error && data) {
-          setUserProfile(data);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('business_name, role')
+            .eq('user_id', user.id)
+            .single();
+          
+          if (!error && data) {
+            setUserProfile(data);
+          }
         }
+      } catch (error) {
+        console.error("Error fetching profile:", error);
       }
       setIsProfileLoading(false);
     };
@@ -483,7 +540,11 @@ export default function App() {
     let interval: NodeJS.Timeout;
 
     const checkConfigAndFetch = async () => {
-      if (import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY) {
+      const url = import.meta.env.VITE_SUPABASE_URL;
+      const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const isValidConfig = url && key && url !== 'YOUR_SUPABASE_URL' && url !== 'mock.supabase.co' && url.startsWith('http');
+
+      if (isValidConfig) {
         setIsSupabaseConfigured(true);
         if (session) {
           // Initial load
@@ -739,7 +800,8 @@ export default function App() {
               .from('live_inventory')
               .update({ 
                 quantity: existingInv.quantity + qtyNum,
-                ...(priceNum ? { unit_price: priceNum } : {})
+                ...(priceNum ? { unit_price: priceNum } : {}),
+                ...(referenceCode ? { reference_code: referenceCode } : {})
                })
               .eq('inventory_id', existingInv.inventory_id);
           } else {
@@ -752,7 +814,8 @@ export default function App() {
                 quantity: qtyNum,
                 unit_price: priceNum || 0,
                 manufacturer: manufacturer,
-                position: position
+                position: position,
+                reference_code: referenceCode || null
               });
           }
         } else {
@@ -783,6 +846,7 @@ export default function App() {
         setCustomYear('');
         setQuantity('1');
         if (scanAction === 'add') setPrice('');
+        setReferenceCode('');
         setSelectedPosition('');
         setCustomPosition('');
         
@@ -1205,7 +1269,17 @@ export default function App() {
                     {/* Sign Out */}
                     <div className="p-2 border-t border-slate-100 bg-slate-50">
                       <button 
-                        onClick={() => supabase.auth.signOut()}
+                        onClick={async () => {
+                          if (isSupabaseConfigured) {
+                            try {
+                              await supabase.auth.signOut();
+                            } catch (e) {
+                              console.error("Sign out error:", e);
+                            }
+                          } else {
+                            setSession(null);
+                          }
+                        }}
                         className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-colors text-left"
                       >
                         <LogOut className="w-4 h-4" /> {t.logOut}
@@ -1517,6 +1591,16 @@ export default function App() {
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="sm:col-span-3">
+                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.refCode} (OPTIONAL)</label>
+                  <input
+                    type="text"
+                    value={referenceCode}
+                    onChange={(e) => setReferenceCode(e.target.value)}
+                    className="block w-full px-4 py-3 border border-slate-200 rounded-xl bg-white/50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400 transition-all font-bold text-lg"
+                    placeholder="e.g. REF-12345"
+                  />
+                </div>
                 <div className="sm:col-span-1">
                   <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.quantity}</label>
                   <input
@@ -1632,10 +1716,24 @@ export default function App() {
                             {(Number(order.price || order.agreed_price || 0) * order.quantity_ordered).toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
                           </span>
                         </p>
+                        {order.reference_code && (
+                          <p className="text-sm mt-1.5">
+                            <span className="font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-100">{t.refCode}: {order.reference_code}</span>
+                          </p>
+                        )}
                       </div>
                     </div>
                     
                     <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                      {order.request_photo_url && (
+                        <button 
+                          onClick={() => window.open(order.request_photo_url, '_blank')}
+                          className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-indigo-700 py-2 px-4 rounded-xl text-xs font-bold transition-all border border-indigo-200 hover:border-indigo-300 shadow-sm group"
+                        >
+                          <Image className="w-3.5 h-3.5 text-indigo-500 group-hover:-translate-y-0.5 transition-transform" />
+                          {t.viewRefPhoto}
+                        </button>
+                      )}
                       {order.po_file_url && (
                         <button 
                           onClick={() => window.open(order.po_file_url, '_blank')}
@@ -1721,10 +1819,24 @@ export default function App() {
                         <p className="text-sm text-slate-600 font-medium mt-0.5">
                           {order.live_inventory?.make || ''} {order.live_inventory?.model || ''} ({order.live_inventory?.year || ''}) • {getTranslatedPosition(order.live_inventory?.position)}
                         </p>
+                        {order.reference_code && (
+                          <p className="text-sm mt-1.5">
+                            <span className="font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-100">{t.refCode}: {order.reference_code}</span>
+                          </p>
+                        )}
                       </div>
                     </div>
                     
                     <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                      {order.request_photo_url && (
+                        <button 
+                          onClick={() => window.open(order.request_photo_url, '_blank')}
+                          className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-indigo-700 py-2 px-4 rounded-xl text-xs font-bold transition-all border border-indigo-200 hover:border-indigo-300 shadow-sm group"
+                        >
+                          <Image className="w-3.5 h-3.5 text-indigo-500 group-hover:-translate-y-0.5 transition-transform" />
+                          {t.viewRefPhoto}
+                        </button>
+                      )}
                       {order.po_file_url && (
                         <button 
                           onClick={() => window.open(order.po_file_url, '_blank')}
@@ -1806,10 +1918,24 @@ export default function App() {
                         <p className="text-xs text-slate-500 mt-0.5">
                           {order.live_inventory?.make || ''} {order.live_inventory?.model || ''} ({order.live_inventory?.year || ''}) • {getTranslatedPosition(order.live_inventory?.position)}
                         </p>
+                        {order.reference_code && (
+                          <p className="text-xs mt-1">
+                            <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-100">{t.refCode}: {order.reference_code}</span>
+                          </p>
+                        )}
                       </div>
                     </div>
                     
                     <div className="flex items-center gap-2">
+                      {order.request_photo_url && (
+                        <button 
+                          onClick={() => window.open(order.request_photo_url, '_blank')}
+                          className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-indigo-700 py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all border border-indigo-200 hover:border-indigo-300 shadow-sm"
+                        >
+                          <Image className="w-3 h-3 text-indigo-500" />
+                          {t.viewRefPhoto}
+                        </button>
+                      )}
                       {order.po_file_url && (
                         <button 
                           onClick={() => window.open(order.po_file_url, '_blank')}
@@ -1888,7 +2014,14 @@ export default function App() {
                       <h3 className="font-bold text-slate-800 text-lg truncate">
                         {item.universal_catalog?.make} {item.universal_catalog?.model} <span className="text-slate-400 font-normal mx-1">|</span> <span className="text-slate-600">{lang === 'fr' ? (positionTranslations[item.position] || item.position || t.unknownPosition) : (item.position || t.unknownPosition)}</span> <span className="text-slate-400 font-normal mx-1">|</span> <span className="text-indigo-600">{item.manufacturer || t.unknown}</span>
                       </h3>
-                      <p className="text-sm text-slate-500 font-medium">{item.universal_catalog?.year}</p>
+                      <div className="flex items-center gap-3 mt-1">
+                        <p className="text-sm text-slate-500 font-medium">{item.universal_catalog?.year}</p>
+                        {item.reference_code && (
+                          <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                            {t.refCode}: {item.reference_code}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     
                     <div className="flex items-center justify-between sm:justify-end gap-8">
