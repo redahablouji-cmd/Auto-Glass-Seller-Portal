@@ -156,6 +156,12 @@ export const translations = {
     active: 'Active',
     orderHistory: 'Order History',
     myTransactions: 'My Transactions',
+    cancelOrderTitle: 'Cancel this Order?',
+    cancelOrderBody: 'Are you sure you want to cancel this order? The buyer will be notified.',
+    goBack: 'Go Back',
+    confirmCancellation: 'Confirm Cancellation',
+    orderCancelledSuccess: 'Order cancelled successfully.',
+    errorCancellingOrder: 'Error cancelling order.',
   },
   fr: {
     // Auth
@@ -310,6 +316,12 @@ export const translations = {
     active: 'Active',
     orderHistory: 'Historique des commandes',
     myTransactions: 'Mes transactions',
+    cancelOrderTitle: 'Annuler cette commande ?',
+    cancelOrderBody: 'Êtes-vous sûr de vouloir annuler cette commande ? L\'acheteur sera notifié.',
+    goBack: 'Retour',
+    confirmCancellation: 'Confirmer l\'annulation',
+    orderCancelledSuccess: 'Commande annulée avec succès.',
+    errorCancellingOrder: 'Erreur lors de l\'annulation de la commande.',
   }
 };
 

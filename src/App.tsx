@@ -434,6 +434,11 @@ export default function App() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // Cancel Order Modal State
+  const [isCancelOrderModalOpen, setIsCancelOrderModalOpen] = useState(false);
+  const [orderToCancel, setOrderToCancel] = useState<any>(null);
+  const [isCancellingOrder, setIsCancellingOrder] = useState(false);
+
   // Profile Dropdown State
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isCredentialModalOpen, setIsCredentialModalOpen] = useState(false);
@@ -854,6 +859,32 @@ export default function App() {
       ));
       setSuccessMessage(t.orderAccepted);
       setTimeout(() => setSuccessMessage(null), 3000);
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    if (!orderToCancel) return;
+    setIsCancellingOrder(true);
+    try {
+      if (isSupabaseConfigured) {
+        const { error } = await supabase
+          .from('order_ledger')
+          .update({ status: 'Cancelled' })
+          .eq('id', orderToCancel.id);
+
+        if (error) throw error;
+      }
+
+      setOrders(prev => prev.map(o => o.id === orderToCancel.id ? { ...o, status: 'Cancelled' } : o));
+      setSuccessMessage(t.orderCancelledSuccess);
+      setTimeout(() => setSuccessMessage(null), 3000);
+      setIsCancelOrderModalOpen(false);
+      setOrderToCancel(null);
+    } catch (err) {
+      console.error('Error cancelling order:', err);
+      alert(t.errorCancellingOrder);
+    } finally {
+      setIsCancellingOrder(false);
     }
   };
 
@@ -1566,7 +1597,17 @@ export default function App() {
                 </div>
               ) : (
                 orders.filter(o => o.status === 'Pending' || o.status === 'Requested').map((order) => (
-                  <div key={order.id} className="bg-white/80 backdrop-blur-md border border-amber-200/60 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all">
+                  <div key={order.id} className="relative bg-white/80 backdrop-blur-md border border-amber-200/60 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all">
+                    <button
+                      onClick={() => {
+                        setOrderToCancel(order);
+                        setIsCancelOrderModalOpen(true);
+                      }}
+                      className="absolute top-3 right-3 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Cancel Order"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                     <div className="flex items-center gap-4 flex-1">
                       <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center border border-amber-100 shrink-0">
                         <ShoppingCart className="w-5 h-5 text-amber-500" />
@@ -1650,7 +1691,17 @@ export default function App() {
                 </div>
               ) : (
                 orders.filter(o => o.status === 'Accepted' || o.status === 'Prepare for Delivery').map((order) => (
-                  <div key={order.id} className="bg-white/80 backdrop-blur-md border border-blue-200/60 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all">
+                  <div key={order.id} className="relative bg-white/80 backdrop-blur-md border border-blue-200/60 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all">
+                    <button
+                      onClick={() => {
+                        setOrderToCancel(order);
+                        setIsCancelOrderModalOpen(true);
+                      }}
+                      className="absolute top-3 right-3 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Cancel Order"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                     <div className="flex items-center gap-4 flex-1">
                       <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100 shrink-0">
                         <Clock className="w-5 h-5 text-blue-500" />
@@ -1727,12 +1778,12 @@ export default function App() {
             </div>
             
             <div className="grid gap-3">
-              {orders.filter(o => o.status === 'Completed' || o.status === 'Rejected').length === 0 ? (
+              {orders.filter(o => o.status === 'Completed' || o.status === 'Rejected' || o.status === 'Cancelled').length === 0 ? (
                 <div className="text-center py-6 text-slate-400 bg-white/40 rounded-2xl border border-dashed border-slate-200 italic">
                   {t.noOrders}
                 </div>
               ) : (
-                orders.filter(o => o.status === 'Completed' || o.status === 'Rejected').map((order) => (
+                orders.filter(o => o.status === 'Completed' || o.status === 'Rejected' || o.status === 'Cancelled').map((order) => (
                   <div key={order.id} className="bg-white/60 backdrop-blur-sm border border-slate-200 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 opacity-80 hover:opacity-100 transition-all">
                     <div className="flex items-center gap-4 flex-1">
                       <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 shrink-0">
@@ -1742,7 +1793,9 @@ export default function App() {
                         <div className="flex flex-wrap items-center gap-2 mb-1">
                           <span className="font-mono text-[9px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 uppercase tracking-tight">{order.transaction_id}</span>
                           <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
-                            order.status === 'Completed' ? 'text-slate-600 bg-slate-50 border-slate-200' : 'text-red-500 bg-red-50 border-red-100'
+                            order.status === 'Completed' ? 'text-slate-600 bg-slate-50 border-slate-200' : 
+                            order.status === 'Cancelled' ? 'text-orange-500 bg-orange-50 border-orange-100' :
+                            'text-red-500 bg-red-50 border-red-100'
                           }`}>
                             {order.status}
                           </span>
@@ -2145,6 +2198,61 @@ export default function App() {
                   <>
                     <Trash2 className="w-4 h-4" />
                     {t.confirmDelete}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Order Modal */}
+      {isCancelOrderModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-red-50/50">
+              <h2 className="text-xl font-bold text-red-600 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5" />
+                {t.cancelOrderTitle}
+              </h2>
+              <button 
+                onClick={() => !isCancellingOrder && setIsCancelOrderModalOpen(false)}
+                disabled={isCancellingOrder}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <p className="text-slate-600 text-sm leading-relaxed">
+                {t.cancelOrderBody}
+              </p>
+            </div>
+
+            <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsCancelOrderModalOpen(false)}
+                disabled={isCancellingOrder}
+                className="px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-200/50 rounded-xl transition-colors disabled:opacity-50"
+              >
+                {t.goBack}
+              </button>
+              <button
+                onClick={handleCancelOrder}
+                disabled={isCancellingOrder}
+                className="px-5 py-2.5 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isCancellingOrder ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    {t.confirmCancellation}...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    {t.confirmCancellation}
                   </>
                 )}
               </button>
