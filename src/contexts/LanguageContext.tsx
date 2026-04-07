@@ -149,6 +149,13 @@ export const translations = {
     orderPreparing: 'Order is being prepared for delivery.',
     orderCompleted: 'Order marked as completed.',
     errorUpdatingOrder: 'Error updating order status.',
+    officeDashboard: 'Office Dashboard',
+    actionRequired: 'Action Required',
+    urgent: 'Urgent',
+    inProgress: 'In Progress',
+    active: 'Active',
+    orderHistory: 'Order History',
+    myTransactions: 'My Transactions',
   },
   fr: {
     // Auth
@@ -296,6 +303,13 @@ export const translations = {
     orderPreparing: 'La commande est en cours de préparation pour la livraison.',
     orderCompleted: 'Commande marquée comme terminée.',
     errorUpdatingOrder: 'Erreur lors de la mise à jour du statut de la commande.',
+    officeDashboard: 'Tableau de bord Bureau',
+    actionRequired: 'Action requise',
+    urgent: 'Urgent',
+    inProgress: 'En cours',
+    active: 'Active',
+    orderHistory: 'Historique des commandes',
+    myTransactions: 'Mes transactions',
   }
 };
 

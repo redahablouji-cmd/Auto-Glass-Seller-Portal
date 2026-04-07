@@ -4,10 +4,11 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Package, ShoppingCart, ArrowRightLeft, Plus, Minus, Upload, ScanLine, Pencil, X, Bell, User, Barcode, LogOut, LayoutDashboard, Boxes, ReceiptText, Settings, HeadphonesIcon, AlertTriangle, ChevronDown, Globe, Trash2 } from 'lucide-react';
+import { Search, Package, ShoppingCart, ArrowRightLeft, Plus, Minus, Upload, ScanLine, Pencil, X, Bell, User, Barcode, LogOut, LayoutDashboard, Boxes, ReceiptText, Settings, HeadphonesIcon, AlertTriangle, ChevronDown, Globe, Trash2, AlertCircle, Clock, History } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Auth from './components/Auth';
 import { useLanguage } from './contexts/LanguageContext';
+import SearchableSelect from './components/SearchableSelect';
 
 // Initialize Supabase client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mock.supabase.co';
@@ -15,45 +16,324 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'mock-key';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const CAR_CATALOG: Record<string, Record<string, string[]>> = {
+  
   "Dacia": {
-    "Logan": ["2005-2012", "2013-2020", "2021-Present"],
-    "Sandero": ["2008-2012", "2013-2020", "2021-Present"],
-    "Duster": ["2010-2017", "2018-2023", "2024-Present"],
-    "Dokker": ["2012-2021"]
+    "Logan": ["Phase 1 (2004-2008)", "Phase 2 (2008-2012)", "Logan II (2012-2020)", "Logan III (2020-Present)"],
+    "Sandero": ["Stepway I (2008-2012)", "Sandero II (2012-2020)", "Sandero III (2020-Present)"],
+    "Duster": ["Duster I (2010-2017)", "Duster II (2017-2023)", "Duster III (2024-Present)"],
+    "Dokker": ["2012-2021"], "Lodgy": ["2012-2022"], "Jogger": ["2021-Present"], "Spring": ["2021-Present"], "Solenza": ["2003-2005"]
   },
   "Renault": {
-    "Clio": ["Clio III (2005-2012)", "Clio IV (2012-2019)", "Clio V (2019-Present)"],
-    "Kangoo": ["2007-2020", "2021-Present"],
-    "Express": ["2021-Present"],
-    "Megane": ["Megane 3 (2008-2016)", "Megane 4 (2016-Present)"]
+    "Twingo": ["Twingo I (1993-2007)", "Twingo II (2007-2014)", "Twingo III (2014-Present)"],
+    "Clio": ["Clio II (1998-2005)", "Clio III (2005-2012)", "Clio IV (2012-2019)", "Clio V (2019-Present)"],
+    "Megane": ["Megane II (2002-2008)", "Megane III (2008-2016)", "Megane IV (2016-2024)", "Megane E-Tech (2022-Present)"],
+    "Kangoo": ["Kangoo I (1997-2007)", "Kangoo II (2007-2021)", "Kangoo III (2021-Present)"],
+    "Captur": ["Captur I (2013-2019)", "Captur II (2019-Present)"],
+    "Kadjar": ["2015-2022"], "Arkana": ["2021-Present"], "Austral": ["2022-Present"],
+    "Espace": ["Espace IV (2002-2014)", "Espace V (2015-2023)", "Espace VI (2023-Present)"],
+    "Talisman": ["2015-2022"], "Zoe": ["2012-Present"], "Modus": ["2004-2012"],
+    "Express": ["Express Van (2021-Present)"], "Trafic": ["Trafic II (2001-2014)", "Trafic III (2014-Present)"],
+    "Master": ["Master II (1997-2010)", "Master III (2010-Present)"]
   },
   "Peugeot": {
-    "208": ["2012-2019", "2019-Present"],
-    "301": ["2012-Present"],
-    "3008": ["2016-2023", "2024-Present"],
-    "Partner": ["2008-2018", "2018-Present"]
+    "106": ["1991-2003"], "107": ["2005-2014"], "108": ["2014-2021"],
+    "206": ["206 (1998-2012)", "206+ (2009-2013)"], "207": ["2006-2014"],
+    "208": ["208 I (2012-2019)", "208 II (2019-Present)"],
+    "301": ["301 (2012-Present)"], "307": ["2001-2008"],
+    "308": ["308 I (2007-2013)", "308 II (2013-2021)", "308 III (2021-Present)"],
+    "406": ["1995-2004"], "407": ["2004-2011"], "408": ["2022-Present"],
+    "508": ["508 I (2010-2018)", "508 II (2018-Present)"],
+    "2008": ["2008 I (2013-2019)", "2008 II (2019-Present)"],
+    "3008": ["3008 I (2008-2016)", "3008 II (2016-2023)", "3008 III (2023-Present)"],
+    "5008": ["5008 I (2009-2017)", "5008 II (2017-Present)"],
+    "RCZ": ["2010-2015"], "Partner": ["Partner I (1996-2008)", "Partner II (2008-2018)", "Partner III (2018-Present)"],
+    "Rifter": ["2018-Present"], "Expert": ["Expert II (2007-2016)", "Expert III (2016-Present)"],
+    "Boxer": ["Boxer II (2006-2014)", "Boxer III (2014-Present)"]
+  },
+  "Citroen": {
+    "C1": ["C1 I (2005-2014)", "C1 II (2014-2021)"], "C2": ["2003-2009"],
+    "C3": ["C3 I (2002-2009)", "C3 II (2009-2016)", "C3 III (2016-2024)", "C3 IV (2024-Present)"],
+    "C3 Aircross": ["2017-Present"],
+    "C4": ["C4 I (2004-2010)", "C4 II (2010-2018)", "C4 III (2020-Present)"],
+    "C4 Cactus": ["2014-2020"], "C4 Picasso / SpaceTourer": ["2006-2022"],
+    "C5": ["C5 I (2001-2008)", "C5 II (2008-2017)", "C5 X (2021-Present)"],
+    "C5 Aircross": ["2017-Present"], "C-Elysee": ["2012-Present"],
+    "DS3": ["2009-2019"], "DS4": ["2010-2018"], "DS5": ["2011-2018"], "Ami": ["2020-Present"],
+    "Berlingo": ["Berlingo I (1996-2008)", "Berlingo II (2008-2018)", "Berlingo III (2018-Present)"],
+    "Jumpy": ["Jumpy II (2007-2016)", "Jumpy III (2016-Present)"],
+    "Jumper": ["Jumper II (2006-2014)", "Jumper III (2014-Present)"]
   },
   "Volkswagen": {
-    "Golf": ["Golf 6 (2008-2012)", "Golf 7 (2012-2019)", "Golf 8 (2019-Present)"],
-    "Touareg": ["2011-2018", "2018-Present"],
-    "Caddy": ["2010-2020", "2020-Present"]
+    "Up!": ["2011-2023"], "Fox": ["2003-2021"],
+    "Polo": ["Mk4 (2002-2009)", "Mk5 (2009-2017)", "Mk6 (2017-Present)"],
+    "Golf": ["Mk4 (1997-2003)", "Mk5 (2003-2008)", "Mk6 (2008-2012)", "Mk7 (2012-2019)", "Mk8 (2019-Present)"],
+    "Beetle": ["New Beetle (1997-2011)", "A5 (2011-2019)"], "Scirocco": ["2008-2017"],
+    "Passat": ["B6 (2005-2010)", "B7 (2010-2014)", "B8 (2014-2023)", "B9 (2024-Present)"],
+    "Arteon": ["2017-Present"], "Sharan": ["2010-2022"], "Touran": ["2003-2015", "2015-Present"],
+    "T-Cross": ["2019-Present"], "T-Roc": ["2017-Present"],
+    "Tiguan": ["Tiguan I (2007-2016)", "Tiguan II (2016-2023)", "Tiguan III (2023-Present)"],
+    "Touareg": ["Touareg I (2002-2010)", "Touareg II (2010-2018)", "Touareg III (2018-Present)"],
+    "ID Series": ["ID.3 (2019-Present)", "ID.4 (2020-Present)", "ID.5 (2021-Present)", "ID.Buzz (2022-Present)"],
+    "Caddy": ["Mk3 (2004-2015)", "Mk4 (2015-2020)", "Mk5 (2020-Present)"],
+    "Amarok": ["2010-2022", "2023-Present"],
+    "Transporter": ["T5 (2003-2015)", "T6 (2015-2019)", "T6.1 (2019-Present)"],
+    "Crafter": ["Crafter I (2006-2016)", "Crafter II (2017-Present)"]
   },
-  "Porsche": {
-    "Cayenne": ["2011-2018", "2019-Present", "Turbo GT (2022-Present)"],
-    "Macan": ["2014-2021", "2022-Present"]
+  "Audi": {
+    "A1": ["8X (2010-2018)", "GB (2018-Present)"], "A2": ["8Z (1999-2005)"],
+    "A3": ["8P (2003-2013)", "8V (2012-2020)", "8Y (2020-Present)"],
+    "A4": ["B7 (2004-2008)", "B8 (2008-2016)", "B9 (2016-Present)"],
+    "A5": ["B8 (2007-2016)", "B9 (2016-Present)"],
+    "A6": ["C6 (2004-2011)", "C7 (2011-2018)", "C8 (2018-Present)"],
+    "A7": ["4G8 (2010-2018)", "4K8 (2018-Present)"],
+    "A8": ["D3 (2002-2009)", "D4 (2009-2017)", "D5 (2017-Present)"],
+    "TT": ["8J (2006-2014)", "8S (2014-2023)"], "R8": ["Type 42 (2006-2015)", "Type 4S (2015-2024)"],
+    "Q2": ["GA (2016-Present)"], "Q3": ["8U (2011-2018)", "F3 (2018-Present)"],
+    "Q4 e-tron": ["2021-Present"], "Q5": ["8R (2008-2017)", "FY (2017-Present)"],
+    "Q7": ["4L (2005-2015)", "4M (2015-Present)"], "Q8": ["4M8 (2018-Present)"],
+    "e-tron GT": ["2021-Present"]
+  },
+  "BMW": {
+    "1 Series": ["E87 (2004-2011)", "F20 (2011-2019)", "F40 (2019-Present)"],
+    "2 Series": ["F22 (2014-2021)", "G42 (2021-Present)", "Active Tourer (2014-Present)"],
+    "3 Series": ["E46 (1998-2006)", "E90 (2005-2013)", "F30 (2011-2019)", "G20 (2018-Present)"],
+    "4 Series": ["F32 (2013-2020)", "G22 (2020-Present)"],
+    "5 Series": ["E60 (2003-2010)", "F10 (2010-2017)", "G30 (2017-2023)", "G60 (2023-Present)"],
+    "6 Series": ["E63 (2003-2010)", "F12 (2011-2018)", "G32 (2017-2023)"],
+    "7 Series": ["E65 (2001-2008)", "F01 (2008-2015)", "G11 (2015-2022)", "G70 (2022-Present)"],
+    "8 Series": ["G15 (2018-Present)"],
+    "Z4": ["E85 (2002-2008)", "E89 (2009-2016)", "G29 (2018-Present)"],
+    "i Series": ["i3 (2013-2022)", "i4 (2021-Present)", "i8 (2014-2020)", "iX (2021-Present)"],
+    "X1": ["E84 (2009-2015)", "F48 (2015-2022)", "U11 (2022-Present)"],
+    "X2": ["F39 (2017-2023)", "U10 (2023-Present)"],
+    "X3": ["E83 (2003-2010)", "F25 (2010-2017)", "G01 (2017-2024)", "G45 (2024-Present)"],
+    "X4": ["F26 (2014-2018)", "G02 (2018-Present)"],
+    "X5": ["E53 (1999-2006)", "E70 (2006-2013)", "F15 (2013-2018)", "G05 (2018-Present)"],
+    "X6": ["E71 (2008-2014)", "F16 (2014-2019)", "G06 (2019-Present)"],
+    "X7": ["G07 (2018-Present)"], "XM": ["G09 (2022-Present)"]
   },
   "Mercedes-Benz": {
-    "G-Class": ["W463 (1990-2018)", "G63 AMG (2019-Present)"],
-    "E-Class": ["W213 (2016-2023)", "W214 (2024-Present)"]
+    "A-Class": ["W169 (2004-2012)", "W176 (2012-2018)", "W177 (2018-Present)"],
+    "B-Class": ["W245 (2005-2011)", "W246 (2011-2018)", "W247 (2018-Present)"],
+    "C-Class": ["W203 (2000-2007)", "W204 (2007-2014)", "W205 (2014-2021)", "W206 (2021-Present)"],
+    "CLA": ["C117 (2013-2019)", "C118 (2019-Present)"],
+    "CLS": ["C219 (2004-2010)", "C218 (2011-2018)", "C257 (2018-2023)"],
+    "E-Class": ["W211 (2002-2009)", "W212 (2009-2016)", "W213 (2016-2023)", "W214 (2023-Present)"],
+    "S-Class": ["W220 (1998-2005)", "W221 (2006-2013)", "W222 (2014-2020)", "W223 (2020-Present)"],
+    "SL / SLC / SLK": ["R171 (2004-2010)", "R172 (2011-2020)", "R231 (2012-2020)", "R232 (2022-Present)"],
+    "EQ Series": ["EQA", "EQB", "EQC", "EQE", "EQS"],
+    "GLA": ["X156 (2013-2019)", "H247 (2019-Present)"], "GLB": ["X247 (2019-Present)"],
+    "GLC": ["X253 (2015-2022)", "X254 (2022-Present)"], "GLE (ML)": ["W164 (2005-2011)", "W166 (2011-2019)", "V167 (2019-Present)"],
+    "GLS (GL)": ["X164 (2006-2012)", "X166 (2013-2019)", "X167 (2020-Present)"],
+    "G-Class": ["W463 (1990-2018)", "W463A (2018-Present)"],
+    "V-Class / Vito": ["W639 (2003-2014)", "W447 (2014-Present)"],
+    "Sprinter": ["W903 (1995-2006)", "W906 (2006-2018)", "W907/W910 (2018-Present)"]
+  },
+  "Porsche": {
+    "911": ["996 (1997-2004)", "997 (2004-2012)", "991 (2012-2019)", "992 (2019-Present)"],
+    "718 Boxster/Cayman": ["986 (1996-2004)", "987 (2005-2012)", "981 (2012-2016)", "982 (2016-Present)"],
+    "Taycan": ["Taycan (2019-Present)"],
+    "Panamera": ["970 (2009-2016)", "971 (2016-2023)", "972 (2023-Present)"],
+    "Macan": ["95B (2014-2024)", "Macan EV (2024-Present)"],
+    "Cayenne": ["9PA (2002-2010)", "92A (2011-2018)", "9YA (2018-Present)"]
+  },
+  "Toyota": {
+    "Aygo": ["AB10 (2005-2014)", "AB40 (2014-2021)", "Aygo X (2021-Present)"],
+    "Yaris": ["XP90 (2005-2011)", "XP130 (2011-2020)", "XP210 (2020-Present)"],
+    "Corolla": ["E140 (2006-2013)", "E170 (2013-2019)", "E210 (2018-Present)"],
+    "Prius": ["XW20 (2003-2009)", "XW30 (2009-2015)", "XW50 (2015-2022)", "XW60 (2022-Present)"],
+    "Camry": ["XV40 (2006-2011)", "XV50 (2011-2017)", "XV70 (2017-2024)", "XV80 (2024-Present)"],
+    "Supra": ["A90 (2019-Present)"], "GT86 / GR86": ["2012-2021", "2021-Present"],
+    "C-HR": ["1st Gen (2016-2023)", "2nd Gen (2023-Present)"],
+    "RAV4": ["XA30 (2005-2012)", "XA40 (2012-2018)", "XA50 (2018-Present)"],
+    "Land Cruiser": ["Prado J120 (2002-2009)", "Prado J150 (2009-2023)", "Prado J250 (2024-Present)", "LC200 (2007-2021)", "LC300 (2021-Present)"],
+    "Hilux": ["N70 (2004-2015)", "AN120 (2015-Present)"],
+    "Proace": ["2013-2016", "2016-Present"]
   },
   "Ford": {
-    "Ranger": ["2011-2022", "2023-Present"],
-    "F-150 Raptor": ["2017-2020", "2021-Present"]
+    "Ka / Ka+": ["Mk2 (2008-2016)", "Mk3 (2016-2021)"],
+    "Fiesta": ["Mk5 (2002-2008)", "Mk6 (2008-2017)", "Mk7 (2017-2023)"],
+    "Puma": ["2019-Present"],
+    "Focus": ["Mk2 (2004-2011)", "Mk3 (2011-2018)", "Mk4 (2018-Present)"],
+    "Mondeo": ["Mk3 (2000-2007)", "Mk4 (2007-2014)", "Mk5 (2014-2022)"],
+    "Mustang": ["S197 (2005-2014)", "S550 (2015-2023)", "S650 (2024-Present)"],
+    "Mach-E": ["2020-Present"],
+    "Kuga": ["Kuga I (2008-2012)", "Kuga II (2012-2019)", "Kuga III (2019-Present)"],
+    "Edge": ["2015-2023"], "Explorer": ["2020-Present"],
+    "Galaxy / S-Max": ["2006-2015", "2015-2023"],
+    "Ranger": ["T6 (2011-2022)", "T6.2 (2022-Present)"],
+    "Transit / Tourneo": ["Transit Mk3 (2000-2014)", "Transit Mk4 (2014-Present)", "Transit Custom (2012-Present)"]
+  },
+  "Skoda": {
+    "Citigo": ["2011-2020"], "Fabia": ["Fabia II (2007-2014)", "Fabia III (2014-2021)", "Fabia IV (2021-Present)"],
+    "Scala": ["2019-Present"], "Rapid": ["2012-2019"],
+    "Octavia": ["Octavia II (2004-2013)", "Octavia III (2013-2020)", "Octavia IV (2020-Present)"],
+    "Superb": ["Superb II (2008-2015)", "Superb III (2015-2023)", "Superb IV (2024-Present)"],
+    "Kamiq": ["2019-Present"], "Karoq": ["2017-Present"],
+    "Kodiaq": ["Kodiaq I (2016-2023)", "Kodiaq II (2024-Present)"],
+    "Enyaq": ["2020-Present"]
+  },
+  "Seat": {
+    "Mii": ["2011-2021"], "Ibiza": ["Mk3 (2002-2008)", "Mk4 (2008-2017)", "Mk5 (2017-Present)"],
+    "Leon": ["Mk2 (2005-2012)", "Mk3 (2012-2020)", "Mk4 (2020-Present)"],
+    "Altea": ["2004-2015"], "Alhambra": ["2010-2020"],
+    "Arona": ["2017-Present"], "Ateca": ["2016-Present"], "Tarraco": ["2018-Present"]
+  },
+  "Opel": {
+    "Adam": ["2012-2019"], "Karl": ["2014-2019"],
+    "Corsa": ["Corsa D (2006-2014)", "Corsa E (2014-2019)", "Corsa F (2019-Present)"],
+    "Astra": ["Astra H (2004-2009)", "Astra J (2009-2015)", "Astra K (2015-2021)", "Astra L (2021-Present)"],
+    "Insignia": ["2008-2017", "2017-2022"], "Zafira": ["2005-2014", "2011-2019"],
+    "Mokka": ["2012-2019", "2020-Present"], "Crossland": ["2017-Present"],
+    "Grandland": ["2017-Present"], "Vivaro": ["2001-2014", "2014-Present"]
+  },
+  "Fiat": {
+    "500": ["500 (2007-Present)", "500X (2014-Present)", "500L (2012-2022)"],
+    "Panda": ["Panda II (2003-2012)", "Panda III (2011-Present)"],
+    "Punto": ["Punto II (1999-2010)", "Grande Punto (2005-2018)"],
+    "Tipo": ["2015-Present"], "Bravo": ["2007-2014"],
+    "Doblo": ["Doblo I (2000-2010)", "Doblo II (2010-2022)", "Doblo III (2022-Present)"],
+    "Fiorino": ["Fiorino III (2007-Present)"],
+    "Ducato": ["Ducato II (1993-2006)", "Ducato III (2006-Present)"]
   },
   "Hyundai": {
-    "Tucson": ["2015-2020", "2021-Present"],
-    "Accent": ["2011-2017", "2018-Present"]
+    "i10": ["i10 I (2007-2013)", "i10 II (2013-2019)", "i10 III (2019-Present)"],
+    "i20": ["i20 I (2008-2014)", "i20 II (2014-2020)", "i20 III (2020-Present)"],
+    "i30": ["i30 I (2007-2012)", "i30 II (2012-2017)", "i30 III (2017-Present)"],
+    "Accent": ["Accent III (2005-2010)", "Accent IV (2010-2017)", "Accent V (2017-Present)"],
+    "Elantra": ["Elantra V (2010-2015)", "Elantra VI (2015-2020)", "Elantra VII (2020-Present)"],
+    "Ioniq Series": ["Ioniq (2016-2022)", "Ioniq 5 (2021-Present)", "Ioniq 6 (2022-Present)"],
+    "Kona": ["2017-2023", "2024-Present"],
+    "Tucson": ["Tucson I (2004-2009)", "Tucson II (2009-2015)", "Tucson III (2015-2020)", "Tucson IV (2020-Present)"],
+    "Santa Fe": ["Santa Fe II (2006-2012)", "Santa Fe III (2012-2018)", "Santa Fe IV (2018-2023)", "Santa Fe V (2024-Present)"],
+    "Creta": ["Creta I (2014-2019)", "Creta II (2019-Present)"], "Staria": ["2021-Present"]
+  },
+  "Kia": {
+    "Picanto": ["Picanto I (2004-2011)", "Picanto II (2011-2017)", "Picanto III (2017-Present)"],
+    "Rio": ["Rio II (2005-2011)", "Rio III (2011-2017)", "Rio IV (2017-2023)"],
+    "Ceed": ["Ceed I (2006-2012)", "Ceed II (2012-2018)", "Ceed III (2018-Present)"],
+    "Stinger": ["2017-2023"], "EV6 / EV9": ["EV6 (2021-Present)", "EV9 (2023-Present)"],
+    "Stonic": ["2017-Present"], "Niro": ["2016-2022", "2022-Present"],
+    "Sportage": ["Sportage II (2004-2010)", "Sportage III (2010-2015)", "Sportage IV (2015-2021)", "Sportage V (2021-Present)"],
+    "Sorento": ["Sorento II (2009-2014)", "Sorento III (2014-2020)", "Sorento IV (2020-Present)"],
+    "Carnival": ["2006-2014", "2015-2021", "2022-Present"]
+  },
+  "Nissan": {
+    "Micra": ["K12 (2002-2010)", "K13 (2010-2017)", "K14 (2017-Present)"],
+    "Leaf": ["ZE0 (2010-2017)", "ZE1 (2017-Present)"],
+    "Z Models": ["350Z (2002-2008)", "370Z (2009-2020)", "Z (2022-Present)", "GT-R R35 (2007-Present)"],
+    "Juke": ["F15 (2010-2019)", "F16 (2019-Present)"],
+    "Qashqai": ["J10 (2006-2013)", "J11 (2013-2021)", "J12 (2021-Present)"],
+    "X-Trail": ["T30 (2000-2007)", "T31 (2007-2013)", "T32 (2013-2021)", "T33 (2021-Present)"],
+    "Pathfinder": ["R51 (2005-2012)", "R52 (2013-2020)"], "Patrol": ["Y61 (1997-2013)", "Y62 (2010-Present)"],
+    "Navara": ["D40 (2004-2015)", "D23 (2014-Present)"]
+  },
+  "Honda": {
+    "Jazz / Fit": ["2001-2008", "2008-2013", "2013-2020", "2020-Present"],
+    "Civic": ["8th Gen (2006-2011)", "9th Gen (2011-2015)", "10th Gen (2016-2021)", "11th Gen (2022-Present)"],
+    "Accord": ["8th Gen (2008-2012)", "9th Gen (2013-2017)", "10th Gen (2018-Present)"],
+    "CR-V": ["3rd Gen (2007-2011)", "4th Gen (2012-2016)", "5th Gen (2017-2022)", "6th Gen (2023-Present)"],
+    "HR-V": ["2nd Gen (2015-2021)", "3rd Gen (2022-Present)"]
+  },
+  "Suzuki": {
+    "Swift": ["2nd Gen (2004-2010)", "3rd Gen (2010-2017)", "4th Gen (2017-2023)", "5th Gen (2024-Present)"],
+    "Vitara": ["3rd Gen (2005-2015)", "4th Gen (2015-Present)"],
+    "Jimny": ["3rd Gen (1998-2018)", "4th Gen (2018-Present)"]
+  },
+  "Mazda": {
+    "Mazda2": ["DE (2007-2014)", "DJ (2014-Present)"],
+    "Mazda3": ["BL (2008-2013)", "BM/BN (2013-2018)", "BP (2019-Present)"],
+    "Mazda6": ["GH (2007-2012)", "GJ/GL (2012-Present)"],
+    "MX-5": ["NC (2005-2015)", "ND (2015-Present)"],
+    "CX-3": ["2015-Present"], "CX-30": ["2019-Present"],
+    "CX-5": ["KE (2012-2017)", "KF (2017-Present)"], "CX-60": ["2022-Present"]
+  },
+  "Volvo": {
+    "C30": ["2006-2013"], "V40": ["2012-2019"], "S60 / V60": ["2010-2018", "2019-Present"],
+    "S90 / V90": ["2016-Present"],
+    "XC40": ["2017-Present"], "XC60": ["1st Gen (2008-2017)", "2nd Gen (2017-Present)"],
+    "XC90": ["1st Gen (2002-2014)", "2nd Gen (2015-Present)"], "EX30 / EX90": ["2023-Present"]
+  },
+  "Alfa Romeo": {
+    "Mito": ["2008-2018"], "147 / 156 / 159": ["1997-2011"],
+    "Giulietta": ["2010-2020"], "Giulia": ["2015-Present"],
+    "Stelvio": ["2016-Present"], "Tonale": ["2022-Present"]
+  },
+  "Jeep": {
+    "Renegade": ["2014-Present"], "Compass": ["1st Gen (2007-2016)", "2nd Gen (2017-Present)"],
+    "Cherokee": ["KL (2014-2023)"],
+    "Grand Cherokee": ["WK2 (2011-2021)", "WL (2021-Present)"],
+    "Wrangler": ["JK (2007-2018)", "JL (2018-Present)"]
+  },
+  "Land Rover": {
+    "Range Rover Evoque": ["L538 (2011-2018)", "L551 (2018-Present)"],
+    "Range Rover Sport": ["L320 (2005-2013)", "L494 (2013-2022)", "L461 (2022-Present)"],
+    "Range Rover Velar": ["L560 (2017-Present)"],
+    "Discovery": ["L319 (2004-2016)", "L462 (2017-Present)"],
+    "Defender": ["Classic (1983-2016)", "L663 (2020-Present)"]
+  },
+  "BYD": {
+    "Atto 3": ["2022-Present"], "Dolphin": ["2023-Present"], "Seal": ["2023-Present"],
+    "Han": ["2022-Present"], "Tang": ["2021-Present"]
+  },
+  "MG": {
+    "MG3": ["2011-Present"], "MG4": ["MG4 EV (2022-Present)"],
+    "ZS": ["ZS (2017-Present)"], "HS": ["HS (2018-Present)"], "RX5": ["2016-Present"]
+  },
+  "Chery": {
+    "Tiggo 2 Pro": ["2020-Present"], "Tiggo 4 Pro": ["2021-Present"],
+    "Tiggo 7 Pro": ["2020-Present"], "Tiggo 8 Pro": ["2021-Present"]
+  },
+  "Changan": {
+    "CS35 Plus": ["2018-Present"], "UNI-T": ["2020-Present"], "UNI-K": ["2020-Present"]
+  },
+  "Geely": {
+    "Coolray": ["2018-Present"], "Azkarra": ["2019-Present"], "Tugella": ["2019-Present"]
+  },
+  "Mitsubishi": {
+    "ASX": ["2010-Present"], "Outlander": ["2006-2012", "2012-2021", "2021-Present"],
+    "Pajero": ["2006-2021"],
+    "L200": ["Triton Mk4 (2005-2015)", "Triton Mk5 (2015-2023)", "Triton Mk6 (2024-Present)"],
+    "Fuso Canter": ["7th Gen (2002-2010)", "8th Gen (2010-Present)"]
+  },
+  "Isuzu": {
+    "D-Max": ["RA/RC (2002-2012)", "RT (2012-2019)", "RG (2019-Present)"],
+    "N-Series Truck": ["NKR/NPR (1993-2006)", "N-Series Reward (2006-Present)"]
+  },
+  "Iveco": {
+    "Daily": ["4th Gen (2006-2011)", "5th Gen (2011-2014)", "6th Gen (2014-Present)"],
+    "Eurocargo": ["2008-2015", "2015-Present"],
+    "Stralis": ["2002-2019"], "S-Way": ["2019-Present"]
+  },
+  "Volvo Trucks": {
+    "FH": ["FH Version 2 (2002-2012)", "FH Version 3/4 (2012-2020)", "FH Version 5 (2020-Present)"],
+    "FM": ["FM Version 2 (2001-2013)", "FM Version 3 (2013-2020)", "FM Version 4 (2020-Present)"],
+    "FMX": ["FMX 1 (2010-2013)", "FMX 2 (2013-2020)", "FMX 3 (2020-Present)"]
+  },
+  "Renault Trucks": {
+    "Magnum": ["1990-2013"], "Premium": ["1996-2013"],
+    "T-Range": ["2013-Present"], "K-Range": ["2013-Present"], "C-Range": ["2013-Present"]
+  },
+  "Scania": {
+    "R-Series": ["PGRT-Series (2004-2016)", "Next Gen R-Series (2016-Present)"],
+    "S-Series": ["Next Gen S-Series (2016-Present)"],
+    "G-Series": ["PGRT-Series (2007-2016)", "Next Gen G-Series (2017-Present)"]
+  },
+  "MAN": {
+    "TGX": ["1st Gen (2007-2020)", "2nd Gen (2020-Present)"],
+    "TGS": ["1st Gen (2007-2020)", "2nd Gen (2020-Present)"],
+    "TGL": ["2005-Present"]
+  },
+  "DAF": {
+    "XF": ["XF105 (2005-2013)", "XF Euro 6 (2013-2021)", "New Gen XF (2021-Present)"],
+    "CF": ["CF Euro 6 (2013-2021)", "New Gen CF (2021-Present)"]
+  },
+  "Mercedes-Benz Trucks": {
+    "Actros": ["MP2 (2003-2008)", "MP3 (2008-2011)", "MP4 (2011-2018)", "MP5 (2018-Present)"],
+    "Arocs": ["2013-Present"],
+    "Atego": ["2nd Gen (2004-2013)", "3rd Gen (2013-Present)"]
   }
+
 };
 
 // Mock data aligned with the provided schema
@@ -99,6 +379,7 @@ export default function App() {
   };
 
   const [inventory, setInventory] = useState(MOCK_INVENTORY);
+  const [inventorySearchQuery, setInventorySearchQuery] = useState('');
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(false);
@@ -1059,62 +1340,45 @@ export default function App() {
                           </div>
                         ) : (
                           <>
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.brand}</label>
-                              <select
-                                value={selectedBrand}
-                                onChange={(e) => {
-                                  setSelectedBrand(e.target.value);
-                                  setSelectedModel('');
-                                  setSelectedYear('');
-                                }}
-                                className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400"
-                                required
-                              >
-                                <option value="" disabled>{t.selectBrand}</option>
-                                {Object.keys(CAR_CATALOG).map(brand => (
-                                  <option key={brand} value={brand}>{brand}</option>
-                                ))}
-                                <option value="OTHER">{t.otherNotInList}</option>
-                              </select>
-                            </div>
+                            <SearchableSelect
+                              label={t.brand}
+                              options={Object.keys(CAR_CATALOG)}
+                              value={selectedBrand}
+                              onChange={(val) => {
+                                setSelectedBrand(val);
+                                setSelectedModel('');
+                                setSelectedYear('');
+                              }}
+                              placeholder={t.selectBrand}
+                              showOtherOption
+                              otherLabel={t.otherNotInList}
+                              required
+                            />
                             
                             {selectedBrand !== 'OTHER' && (
                               <>
-                                <div>
-                                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.model}</label>
-                                  <select
-                                    value={selectedModel}
-                                    onChange={(e) => {
-                                      setSelectedModel(e.target.value);
-                                      setSelectedYear('');
-                                    }}
-                                    disabled={!selectedBrand}
-                                    className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400 disabled:opacity-50"
-                                    required
-                                  >
-                                    <option value="" disabled>{t.selectModel}</option>
-                                    {selectedBrand && CAR_CATALOG[selectedBrand] && Object.keys(CAR_CATALOG[selectedBrand]).map(model => (
-                                      <option key={model} value={model}>{model}</option>
-                                    ))}
-                                  </select>
-                                </div>
+                                <SearchableSelect
+                                  label={t.model}
+                                  options={selectedBrand ? Object.keys(CAR_CATALOG[selectedBrand] || {}) : []}
+                                  value={selectedModel}
+                                  onChange={(val) => {
+                                    setSelectedModel(val);
+                                    setSelectedYear('');
+                                  }}
+                                  disabled={!selectedBrand}
+                                  placeholder={t.selectModel}
+                                  required
+                                />
                                 
-                                <div>
-                                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.yearRange}</label>
-                                  <select
-                                    value={selectedYear}
-                                    onChange={(e) => setSelectedYear(e.target.value)}
-                                    disabled={!selectedModel}
-                                    className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400 disabled:opacity-50"
-                                    required
-                                  >
-                                    <option value="" disabled>{t.selectYear}</option>
-                                    {selectedBrand && selectedModel && CAR_CATALOG[selectedBrand]?.[selectedModel]?.map(year => (
-                                      <option key={year} value={year}>{year}</option>
-                                    ))}
-                                  </select>
-                                </div>
+                                <SearchableSelect
+                                  label={t.yearRange}
+                                  options={selectedBrand && selectedModel ? (CAR_CATALOG[selectedBrand]?.[selectedModel] || []) : []}
+                                  value={selectedYear}
+                                  onChange={(val) => setSelectedYear(val)}
+                                  disabled={!selectedModel}
+                                  placeholder={t.selectYear}
+                                  required
+                                />
                               </>
                             )}
                           </>
@@ -1271,143 +1535,260 @@ export default function App() {
           </div>
         </section>
 
-        {/* 2. Middle Section: Pending Orders (Priority View) */}
-        <section>
-          <div className="flex items-center justify-between mb-4 px-2">
-            <h2 className="text-lg font-bold flex items-center gap-2 text-slate-800">
-              <ShoppingCart className="w-5 h-5 text-indigo-500" />
-              {t.pendingOrders}
-              <span className="bg-indigo-100 text-indigo-700 text-xs py-0.5 px-2.5 rounded-full font-bold ml-2 border border-indigo-200">
+        {/* 2. Middle Section: Office Dashboard (Order Management) */}
+        <section className="space-y-8">
+          <div className="flex items-center justify-between px-2">
+            <h2 className="text-2xl font-bold flex items-center gap-3 text-slate-800">
+              <LayoutDashboard className="w-7 h-7 text-indigo-600" />
+              {t.officeDashboard}
+              <span className="bg-indigo-100 text-indigo-700 text-sm py-1 px-3 rounded-full font-bold border border-indigo-200">
                 {orders.length}
               </span>
             </h2>
           </div>
-          
-          <div className="grid gap-3">
-            {loading ? (
-              <div className="text-center py-8 text-slate-500">{t.loadingOrders}</div>
-            ) : orders.length === 0 ? (
-              <div className="text-center py-8 text-slate-500 bg-white/50 rounded-3xl border border-slate-200">{t.noPendingOrders}</div>
-            ) : (
-              orders.map((order) => (
-                <div key={order.id} className="bg-white/70 backdrop-blur-md border border-white/60 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_4px_25px_rgb(0,0,0,0.06)] transition-all">
-                  <div className="flex items-center gap-4 flex-1">
-                    <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center border border-indigo-100 shrink-0">
-                      <ShoppingCart className="w-5 h-5 text-indigo-500" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <span className="font-mono text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{order.transaction_id}</span>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
-                          order.status === 'Accepted' ? 'text-green-600 bg-green-50 border-green-200' :
-                          order.status === 'Rejected' ? 'text-red-600 bg-red-50 border-red-200' :
-                          order.status === 'Prepare for Delivery' ? 'text-blue-600 bg-blue-50 border-blue-200' :
-                          order.status === 'Completed' ? 'text-slate-600 bg-slate-50 border-slate-200' :
-                          'text-amber-600 bg-amber-50 border-amber-200'
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            order.status === 'Accepted' ? 'bg-green-500' :
-                            order.status === 'Rejected' ? 'bg-red-500' :
-                            order.status === 'Prepare for Delivery' ? 'bg-blue-500' :
-                            order.status === 'Completed' ? 'bg-slate-500' :
-                            'bg-amber-500'
-                          }`}></span>
-                          {order.status}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-medium">
-                          {new Date(order.created_at).toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        </span>
+
+          {/* ZONE A: Action Required (Urgent) */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 px-2">
+              <AlertCircle className="w-5 h-5 text-amber-500" />
+              <h3 className="text-lg font-bold text-slate-700">{t.actionRequired}</h3>
+              <span className="text-xs font-bold px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full border border-amber-200 uppercase tracking-wider">
+                {t.urgent}
+              </span>
+            </div>
+            
+            <div className="grid gap-3">
+              {loading ? (
+                <div className="text-center py-8 text-slate-500">{t.loadingOrders}</div>
+              ) : orders.filter(o => o.status === 'Pending' || o.status === 'Requested').length === 0 ? (
+                <div className="text-center py-6 text-slate-400 bg-white/40 rounded-2xl border border-dashed border-slate-200 italic">
+                  {t.noPendingOrders}
+                </div>
+              ) : (
+                orders.filter(o => o.status === 'Pending' || o.status === 'Requested').map((order) => (
+                  <div key={order.id} className="bg-white/80 backdrop-blur-md border border-amber-200/60 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all">
+                    <div className="flex items-center gap-4 flex-1">
+                      <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center border border-amber-100 shrink-0">
+                        <ShoppingCart className="w-5 h-5 text-amber-500" />
                       </div>
-                      <h3 className="font-bold text-slate-800 text-base truncate">
-                        {order.profiles?.business_name || t.unknown}
-                      </h3>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
-                        <p className="text-sm text-slate-600 font-medium">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 uppercase tracking-tight">{order.transaction_id}</span>
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            {new Date(order.created_at).toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </span>
+                        </div>
+                        <h3 className="font-bold text-slate-800 text-base truncate">
+                          {order.profiles?.business_name || t.unknown}
+                        </h3>
+                        <p className="text-sm text-slate-600 font-medium mt-0.5">
+                          {order.live_inventory?.make || ''} {order.live_inventory?.model || ''} ({order.live_inventory?.year || ''}) • {getTranslatedPosition(order.live_inventory?.position)}
+                        </p>
+                        <p className="text-sm text-slate-500 mt-1 flex items-center gap-2">
+                          <span>{t.qty}: <strong className="text-slate-700">{order.quantity_ordered}</strong></span>
+                          <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                          <span className="font-bold text-indigo-600">
+                            {(Number(order.price || order.agreed_price || 0) * order.quantity_ordered).toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                      {order.po_file_url && (
+                        <button 
+                          onClick={() => window.open(order.po_file_url, '_blank')}
+                          className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-cyan-700 py-2 px-4 rounded-xl text-xs font-bold transition-all border border-cyan-200 hover:border-cyan-300 shadow-sm group"
+                        >
+                          <Upload className="w-3.5 h-3.5 text-cyan-500 group-hover:-translate-y-0.5 transition-transform" />
+                          {t.viewPO}
+                        </button>
+                      )}
+                      
+                      {updatingOrderId === order.id ? (
+                        <div className="flex items-center gap-2 px-4 py-2">
+                          <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                          <span className="text-xs font-bold text-indigo-600">Updating...</span>
+                        </div>
+                      ) : (
+                        <>
+                          <button 
+                            onClick={() => handleUpdateOrderStatus(order.id, 'Accepted')}
+                            className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-xl text-xs font-bold transition-all shadow-sm shadow-green-200"
+                          >
+                            {t.accept}
+                          </button>
+                          <button 
+                            onClick={() => handleUpdateOrderStatus(order.id, 'Rejected')}
+                            className="flex items-center justify-center gap-2 bg-white hover:bg-red-50 text-red-600 py-2 px-4 rounded-xl text-xs font-bold transition-all border border-red-200 hover:border-red-300 shadow-sm"
+                          >
+                            {t.reject}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* ZONE B: In Progress (Active) */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 px-2">
+              <Clock className="w-5 h-5 text-blue-500" />
+              <h3 className="text-lg font-bold text-slate-700">{t.inProgress}</h3>
+              <span className="text-xs font-bold px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full border border-blue-200 uppercase tracking-wider">
+                {t.active}
+              </span>
+            </div>
+            
+            <div className="grid gap-3">
+              {orders.filter(o => o.status === 'Accepted' || o.status === 'Prepare for Delivery').length === 0 ? (
+                <div className="text-center py-6 text-slate-400 bg-white/40 rounded-2xl border border-dashed border-slate-200 italic">
+                  {t.noOrders}
+                </div>
+              ) : (
+                orders.filter(o => o.status === 'Accepted' || o.status === 'Prepare for Delivery').map((order) => (
+                  <div key={order.id} className="bg-white/80 backdrop-blur-md border border-blue-200/60 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all">
+                    <div className="flex items-center gap-4 flex-1">
+                      <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100 shrink-0">
+                        <Clock className="w-5 h-5 text-blue-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 uppercase tracking-tight">{order.transaction_id}</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                            order.status === 'Accepted' ? 'text-green-600 bg-green-50 border-green-200' : 'text-blue-600 bg-blue-50 border-blue-200'
+                          }`}>
+                            {order.status}
+                          </span>
+                        </div>
+                        <h3 className="font-bold text-slate-800 text-base truncate">
+                          {order.profiles?.business_name || t.unknown}
+                        </h3>
+                        <p className="text-sm text-slate-600 font-medium mt-0.5">
                           {order.live_inventory?.make || ''} {order.live_inventory?.model || ''} ({order.live_inventory?.year || ''}) • {getTranslatedPosition(order.live_inventory?.position)}
                         </p>
                       </div>
-                      <p className="text-sm text-slate-500 mt-1 flex items-center gap-2">
-                        <span>{t.qty}: <strong className="text-slate-700">{order.quantity_ordered}</strong></span>
-                        <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-                        <span className="font-bold text-indigo-600">
-                          {(Number(order.price || order.agreed_price || 0) * order.quantity_ordered).toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
-                        </span>
-                      </p>
+                    </div>
+                    
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                      {order.po_file_url && (
+                        <button 
+                          onClick={() => window.open(order.po_file_url, '_blank')}
+                          className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-cyan-700 py-2 px-4 rounded-xl text-xs font-bold transition-all border border-cyan-200 hover:border-cyan-300 shadow-sm group"
+                        >
+                          <Upload className="w-3.5 h-3.5 text-cyan-500 group-hover:-translate-y-0.5 transition-transform" />
+                          {t.viewPO}
+                        </button>
+                      )}
+                      
+                      {updatingOrderId === order.id ? (
+                        <div className="flex items-center gap-2 px-4 py-2">
+                          <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                          <span className="text-xs font-bold text-indigo-600">Updating...</span>
+                        </div>
+                      ) : (
+                        <>
+                          {order.status === 'Accepted' && (
+                            <button 
+                              onClick={() => handleUpdateOrderStatus(order.id, 'Prepare for Delivery')}
+                              className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-xl text-xs font-bold transition-all shadow-sm shadow-blue-200"
+                            >
+                              {t.prepareForDelivery}
+                            </button>
+                          )}
+                          {order.status === 'Prepare for Delivery' && (
+                            <button 
+                              onClick={() => handleUpdateOrderStatus(order.id, 'Completed')}
+                              className="flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 text-white py-2 px-4 rounded-xl text-xs font-bold transition-all shadow-sm shadow-slate-300"
+                            >
+                              {t.markAsCompleted}
+                            </button>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
-                  
-                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                    {order.po_file_url && (
-                      <button 
-                        onClick={() => window.open(order.po_file_url, '_blank')}
-                        className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-cyan-700 py-2 px-4 rounded-xl text-xs font-bold transition-all border border-cyan-200 hover:border-cyan-300 shadow-sm group"
-                      >
-                        <Upload className="w-3.5 h-3.5 text-cyan-500 group-hover:-translate-y-0.5 transition-transform" />
-                        {t.viewPO}
-                      </button>
-                    )}
-                    
-                    {updatingOrderId === order.id ? (
-                      <div className="flex items-center gap-2 px-4 py-2">
-                        <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-                        <span className="text-xs font-bold text-indigo-600">Updating...</span>
-                      </div>
-                    ) : (
-                      <>
-                        {(order.status === 'Pending' || order.status === 'Requested') && (
-                          <>
-                            <button 
-                              onClick={() => handleUpdateOrderStatus(order.id, 'Accepted')}
-                              className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-xl text-xs font-bold transition-all shadow-sm shadow-green-200"
-                            >
-                              {t.accept}
-                            </button>
-                            <button 
-                              onClick={() => handleUpdateOrderStatus(order.id, 'Rejected')}
-                              className="flex items-center justify-center gap-2 bg-white hover:bg-red-50 text-red-600 py-2 px-4 rounded-xl text-xs font-bold transition-all border border-red-200 hover:border-red-300 shadow-sm"
-                            >
-                              {t.reject}
-                            </button>
-                          </>
-                        )}
-                        {order.status === 'Accepted' && (
-                          <button 
-                            onClick={() => handleUpdateOrderStatus(order.id, 'Prepare for Delivery')}
-                            className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-xl text-xs font-bold transition-all shadow-sm shadow-blue-200"
-                          >
-                            {t.prepareForDelivery}
-                          </button>
-                        )}
-                        {order.status === 'Prepare for Delivery' && (
-                          <button 
-                            onClick={() => handleUpdateOrderStatus(order.id, 'Completed')}
-                            className="flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 text-white py-2 px-4 rounded-xl text-xs font-bold transition-all shadow-sm shadow-slate-300"
-                          >
-                            {t.markAsCompleted}
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* ZONE C: Order History (My Transactions) */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 px-2">
+              <History className="w-5 h-5 text-slate-400" />
+              <h3 className="text-lg font-bold text-slate-700">{t.orderHistory}</h3>
+              <span className="text-xs font-bold px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full border border-slate-200 uppercase tracking-wider">
+                {t.myTransactions}
+              </span>
+            </div>
+            
+            <div className="grid gap-3">
+              {orders.filter(o => o.status === 'Completed' || o.status === 'Rejected').length === 0 ? (
+                <div className="text-center py-6 text-slate-400 bg-white/40 rounded-2xl border border-dashed border-slate-200 italic">
+                  {t.noOrders}
                 </div>
-              ))
-            )}
+              ) : (
+                orders.filter(o => o.status === 'Completed' || o.status === 'Rejected').map((order) => (
+                  <div key={order.id} className="bg-white/60 backdrop-blur-sm border border-slate-200 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 opacity-80 hover:opacity-100 transition-all">
+                    <div className="flex items-center gap-4 flex-1">
+                      <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 shrink-0">
+                        <History className="w-4 h-4 text-slate-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className="font-mono text-[9px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 uppercase tracking-tight">{order.transaction_id}</span>
+                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                            order.status === 'Completed' ? 'text-slate-600 bg-slate-50 border-slate-200' : 'text-red-500 bg-red-50 border-red-100'
+                          }`}>
+                            {order.status}
+                          </span>
+                        </div>
+                        <h3 className="font-bold text-slate-700 text-sm truncate">
+                          {order.profiles?.business_name || t.unknown}
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {order.live_inventory?.make || ''} {order.live_inventory?.model || ''} ({order.live_inventory?.year || ''}) • {getTranslatedPosition(order.live_inventory?.position)}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      {order.po_file_url && (
+                        <button 
+                          onClick={() => window.open(order.po_file_url, '_blank')}
+                          className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-500 py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all border border-slate-200 hover:border-slate-300 shadow-sm"
+                        >
+                          <Upload className="w-3 h-3" />
+                          {t.viewPO}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </section>
 
         {/* 3. Bottom Section: Active Inventory Catalog */}
         <section>
-          <div className="flex items-center justify-between mb-4 px-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 px-2 gap-4">
             <h2 className="text-lg font-bold flex items-center gap-2 text-slate-800">
               <Package className="w-5 h-5 text-cyan-500" />
               {t.activeInventory}
             </h2>
-            <div className="relative hidden sm:block">
+            <div className="relative w-full sm:w-64">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input 
                 type="text" 
                 placeholder={t.searchCatalog}
-                className="pl-9 pr-4 py-2 bg-white/70 backdrop-blur-sm border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400 w-64 text-slate-800 placeholder-slate-400 shadow-sm transition-all"
+                value={inventorySearchQuery}
+                onChange={(e) => setInventorySearchQuery(e.target.value)}
+                className="pl-9 pr-4 py-2 bg-white/70 backdrop-blur-sm border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400 w-full text-slate-800 placeholder-slate-400 shadow-sm transition-all"
               />
             </div>
           </div>
@@ -1419,7 +1800,25 @@ export default function App() {
               <div className="text-center py-12 text-slate-500">{t.noActiveInventory}</div>
             ) : (
               <div className="divide-y divide-slate-100/80">
-                {inventory.map((item) => (
+                {inventory
+                  .filter(item => {
+                    const searchStr = inventorySearchQuery.toLowerCase();
+                    const catalog = Array.isArray(item.universal_catalog) ? item.universal_catalog[0] : item.universal_catalog;
+                    const make = catalog?.make?.toLowerCase() || '';
+                    const model = catalog?.model?.toLowerCase() || '';
+                    const year = catalog?.year?.toLowerCase() || '';
+                    const sku = item.master_sku?.toLowerCase() || '';
+                    const manufacturer = item.manufacturer?.toLowerCase() || '';
+                    const position = item.position?.toLowerCase() || '';
+                    
+                    return make.includes(searchStr) || 
+                           model.includes(searchStr) || 
+                           year.includes(searchStr) || 
+                           sku.includes(searchStr) || 
+                           manufacturer.includes(searchStr) || 
+                           position.includes(searchStr);
+                  })
+                  .map((item) => (
                   <div key={item.inventory_id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/40 transition-colors">
                     <div className="flex-1 min-w-0 pr-4">
                       <div className="flex items-center gap-2 mb-1">
@@ -1497,62 +1896,45 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.brand}</label>
-                  <select
-                    value={editBrand}
-                    onChange={(e) => {
-                      setEditBrand(e.target.value);
-                      setEditModel('');
-                      setEditYear('');
-                    }}
-                    className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
-                    required
-                  >
-                    <option value="" disabled>{t.selectBrand}</option>
-                    {Object.keys(CAR_CATALOG).map(brand => (
-                      <option key={brand} value={brand}>{brand}</option>
-                    ))}
-                    <option value="OTHER">{t.otherNotInList}</option>
-                  </select>
-                </div>
+                <SearchableSelect
+                  label={t.brand}
+                  options={Object.keys(CAR_CATALOG)}
+                  value={editBrand}
+                  onChange={(val) => {
+                    setEditBrand(val);
+                    setEditModel('');
+                    setEditYear('');
+                  }}
+                  placeholder={t.selectBrand}
+                  showOtherOption
+                  otherLabel={t.otherNotInList}
+                  required
+                />
                 
                 {editBrand !== 'OTHER' && (
                   <>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.model}</label>
-                      <select
-                        value={editModel}
-                        onChange={(e) => {
-                          setEditModel(e.target.value);
-                          setEditYear('');
-                        }}
-                        disabled={!editBrand}
-                        className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 disabled:opacity-50"
-                        required
-                      >
-                        <option value="" disabled>{t.selectModel}</option>
-                        {editBrand && CAR_CATALOG[editBrand] && Object.keys(CAR_CATALOG[editBrand]).map(model => (
-                          <option key={model} value={model}>{model}</option>
-                        ))}
-                      </select>
-                    </div>
+                    <SearchableSelect
+                      label={t.model}
+                      options={editBrand ? Object.keys(CAR_CATALOG[editBrand] || {}) : []}
+                      value={editModel}
+                      onChange={(val) => {
+                        setEditModel(val);
+                        setEditYear('');
+                      }}
+                      disabled={!editBrand}
+                      placeholder={t.selectModel}
+                      required
+                    />
                     
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.yearRange}</label>
-                      <select
-                        value={editYear}
-                        onChange={(e) => setEditYear(e.target.value)}
-                        disabled={!editModel}
-                        className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 disabled:opacity-50"
-                        required
-                      >
-                        <option value="" disabled>{t.selectYear}</option>
-                        {editBrand && editModel && CAR_CATALOG[editBrand]?.[editModel]?.map(year => (
-                          <option key={year} value={year}>{year}</option>
-                        ))}
-                      </select>
-                    </div>
+                    <SearchableSelect
+                      label={t.yearRange}
+                      options={editBrand && editModel ? (CAR_CATALOG[editBrand]?.[editModel] || []) : []}
+                      value={editYear}
+                      onChange={(val) => setEditYear(val)}
+                      disabled={!editModel}
+                      placeholder={t.selectYear}
+                      required
+                    />
                   </>
                 )}
               </div>
