@@ -102,6 +102,7 @@ export default function App() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(false);
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
 
   // Smart Scanner Module State
   const [scanAction, setScanAction] = useState<'add' | 'sold'>('add');
@@ -238,12 +239,20 @@ export default function App() {
       
       if (!ordError && rawOrders) {
         const enrichedOrders = await Promise.all(rawOrders.map(async (order) => {
-          // Fetch Inventory Details manually
+          // Fetch Inventory Details manually with catalog join
           const { data: invDetails } = await supabase
             .from('live_inventory')
-            .select('make, model, year, position, manufacturer')
+            .select('*, universal_catalog(make, model, year)')
             .eq('inventory_id', order.inventory_id)
             .maybeSingle();
+
+          // Flatten catalog details into live_inventory object
+          const enrichedInv = invDetails ? {
+            ...invDetails,
+            make: invDetails.universal_catalog?.make,
+            model: invDetails.universal_catalog?.model,
+            year: invDetails.universal_catalog?.year
+          } : null;
 
           // Fetch Buyer Details manually
           const { data: buyerDetails } = await supabase
@@ -254,7 +263,7 @@ export default function App() {
 
           return {
             ...order,
-            live_inventory: invDetails,
+            live_inventory: enrichedInv,
             profiles: buyerDetails
           };
         }));
@@ -516,8 +525,9 @@ export default function App() {
     }
   };
 
-  const handleUpdateOrderStatus = async (orderId: string, newStatus: 'Accepted' | 'Rejected') => {
+  const handleUpdateOrderStatus = async (orderId: string, newStatus: string) => {
     if (isSupabaseConfigured) {
+      setUpdatingOrderId(orderId);
       try {
         const { error } = await supabase
           .from('order_ledger')
@@ -531,18 +541,25 @@ export default function App() {
           order.id === orderId ? { ...order, status: newStatus } : order
         ));
         
-        setSuccessMessage(newStatus === 'Accepted' ? t.orderAccepted : t.orderRejected);
+        let msg = t.orderAccepted;
+        if (newStatus === 'Rejected') msg = t.orderRejected;
+        if (newStatus === 'Prepare for Delivery') msg = t.orderPreparing;
+        if (newStatus === 'Completed') msg = t.orderCompleted;
+
+        setSuccessMessage(msg);
         setTimeout(() => setSuccessMessage(null), 3000);
       } catch (error) {
         console.error('Error updating order status:', error);
         alert(t.errorUpdatingOrder);
+      } finally {
+        setUpdatingOrderId(null);
       }
     } else {
       // Mock update
       setOrders(prev => prev.map(order => 
         order.id === orderId ? { ...order, status: newStatus } : order
       ));
-      setSuccessMessage(newStatus === 'Accepted' ? t.orderAccepted : t.orderRejected);
+      setSuccessMessage(t.orderAccepted);
       setTimeout(() => setSuccessMessage(null), 3000);
     }
   };
@@ -1272,11 +1289,15 @@ export default function App() {
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
                           order.status === 'Accepted' ? 'text-green-600 bg-green-50 border-green-200' :
                           order.status === 'Rejected' ? 'text-red-600 bg-red-50 border-red-200' :
+                          order.status === 'Prepare for Delivery' ? 'text-blue-600 bg-blue-50 border-blue-200' :
+                          order.status === 'Completed' ? 'text-slate-600 bg-slate-50 border-slate-200' :
                           'text-amber-600 bg-amber-50 border-amber-200'
                         }`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${
                             order.status === 'Accepted' ? 'bg-green-500' :
                             order.status === 'Rejected' ? 'bg-red-500' :
+                            order.status === 'Prepare for Delivery' ? 'bg-blue-500' :
+                            order.status === 'Completed' ? 'bg-slate-500' :
                             'bg-amber-500'
                           }`}></span>
                           {order.status}
@@ -1290,17 +1311,15 @@ export default function App() {
                       </h3>
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
                         <p className="text-sm text-slate-600 font-medium">
-                          {order.live_inventory?.make} {order.live_inventory?.model} ({order.live_inventory?.year})
-                        </p>
-                        <span className="hidden sm:inline w-1 h-1 rounded-full bg-slate-300"></span>
-                        <p className="text-sm text-slate-500">
-                          {lang === 'fr' ? (positionTranslations[order.live_inventory?.position] || order.live_inventory?.position) : order.live_inventory?.position}
+                          {order.live_inventory?.make || ''} {order.live_inventory?.model || ''} ({order.live_inventory?.year || ''}) • {getTranslatedPosition(order.live_inventory?.position)}
                         </p>
                       </div>
                       <p className="text-sm text-slate-500 mt-1 flex items-center gap-2">
                         <span>{t.qty}: <strong className="text-slate-700">{order.quantity_ordered}</strong></span>
                         <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-                        <span className="font-bold text-indigo-600">{(order.agreed_price * order.quantity_ordered).toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD</span>
+                        <span className="font-bold text-indigo-600">
+                          {(Number(order.price || order.agreed_price || 0) * order.quantity_ordered).toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                        </span>
                       </p>
                     </div>
                   </div>
@@ -1316,20 +1335,45 @@ export default function App() {
                       </button>
                     )}
                     
-                    {order.status === 'Requested' && (
+                    {updatingOrderId === order.id ? (
+                      <div className="flex items-center gap-2 px-4 py-2">
+                        <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                        <span className="text-xs font-bold text-indigo-600">Updating...</span>
+                      </div>
+                    ) : (
                       <>
-                        <button 
-                          onClick={() => handleUpdateOrderStatus(order.id, 'Accepted')}
-                          className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-xl text-xs font-bold transition-all shadow-sm shadow-green-200"
-                        >
-                          {t.accept}
-                        </button>
-                        <button 
-                          onClick={() => handleUpdateOrderStatus(order.id, 'Rejected')}
-                          className="flex items-center justify-center gap-2 bg-white hover:bg-red-50 text-red-600 py-2 px-4 rounded-xl text-xs font-bold transition-all border border-red-200 hover:border-red-300 shadow-sm"
-                        >
-                          {t.reject}
-                        </button>
+                        {(order.status === 'Pending' || order.status === 'Requested') && (
+                          <>
+                            <button 
+                              onClick={() => handleUpdateOrderStatus(order.id, 'Accepted')}
+                              className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-xl text-xs font-bold transition-all shadow-sm shadow-green-200"
+                            >
+                              {t.accept}
+                            </button>
+                            <button 
+                              onClick={() => handleUpdateOrderStatus(order.id, 'Rejected')}
+                              className="flex items-center justify-center gap-2 bg-white hover:bg-red-50 text-red-600 py-2 px-4 rounded-xl text-xs font-bold transition-all border border-red-200 hover:border-red-300 shadow-sm"
+                            >
+                              {t.reject}
+                            </button>
+                          </>
+                        )}
+                        {order.status === 'Accepted' && (
+                          <button 
+                            onClick={() => handleUpdateOrderStatus(order.id, 'Prepare for Delivery')}
+                            className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-xl text-xs font-bold transition-all shadow-sm shadow-blue-200"
+                          >
+                            {t.prepareForDelivery}
+                          </button>
+                        )}
+                        {order.status === 'Prepare for Delivery' && (
+                          <button 
+                            onClick={() => handleUpdateOrderStatus(order.id, 'Completed')}
+                            className="flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 text-white py-2 px-4 rounded-xl text-xs font-bold transition-all shadow-sm shadow-slate-300"
+                          >
+                            {t.markAsCompleted}
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
