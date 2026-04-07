@@ -194,11 +194,19 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
+    let interval: NodeJS.Timeout;
+
     const checkConfigAndFetch = async () => {
       if (import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY) {
         setIsSupabaseConfigured(true);
         if (session) {
-          await fetchSupabaseData();
+          // Initial load
+          await fetchSupabaseData(false);
+          
+          // Start silent polling every 3 seconds
+          interval = setInterval(() => {
+            fetchSupabaseData(true);
+          }, 3000);
         } else {
           setLoading(false);
         }
@@ -212,11 +220,15 @@ export default function App() {
     if (barcodeInputRef.current) {
       barcodeInputRef.current.focus();
     }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [session]);
 
-  const fetchSupabaseData = async () => {
+  const fetchSupabaseData = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       // Fetch inventory
       const { data: invData, error: invError } = await supabase
         .from('live_inventory')
@@ -272,7 +284,7 @@ export default function App() {
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
