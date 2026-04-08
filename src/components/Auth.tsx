@@ -3,9 +3,20 @@ import { createClient } from '@supabase/supabase-js';
 import { Building2, UserCircle, Lock, Mail, Phone, MapPin, Upload, Briefcase, ArrowRight, Loader2, FileText, Globe } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mock.supabase.co';
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'mock-key';
-const supabase = createClient(supabaseUrl, supabaseKey);
+const getSupabaseConfig = () => {
+  const url = import.meta.env.VITE_SUPABASE_URL || '';
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  const isConfigured = url && 
+                      key && 
+                      url !== 'YOUR_SUPABASE_URL' && 
+                      url !== 'mock.supabase.co' && 
+                      url.startsWith('http') &&
+                      !url.includes('undefined');
+  return { url, key, isConfigured };
+};
+
+const { url: supabaseUrl, key: supabaseKey, isConfigured } = getSupabaseConfig();
+const supabase = createClient(isConfigured ? supabaseUrl : 'https://mock.supabase.co', isConfigured ? supabaseKey : 'mock-key');
 
 export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -34,6 +45,22 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
     setError(null);
     setSuccess(null);
     setLoading(true);
+
+    if (!isConfigured) {
+      // Demo Mode Login
+      setTimeout(() => {
+        if (businessCode === 'DEMO' && loginPassword === 'demo') {
+          onLogin({
+            user: { id: 'demo-user', email: 'demo@example.com' },
+            access_token: 'demo-token'
+          });
+        } else {
+          setError("Demo Mode: Use code 'DEMO' and password 'demo'");
+        }
+        setLoading(false);
+      }, 1000);
+      return;
+    }
 
     try {
       // Step 1: Query profiles for email via RPC
@@ -73,6 +100,11 @@ export default function Auth({ onLogin }: { onLogin: (session: any) => void }) {
     e.preventDefault();
     setError(null);
     setSuccess(null);
+
+    if (!isConfigured) {
+      setError("Registration is disabled in Demo Mode.");
+      return;
+    }
 
     if (registerPassword !== confirmPassword) {
       setError(t.passwordsDoNotMatch);

@@ -11,9 +11,23 @@ import { useLanguage } from './contexts/LanguageContext';
 import SearchableSelect from './components/SearchableSelect';
 
 // Initialize Supabase client
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mock.supabase.co';
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'mock-key';
-const supabase = createClient(supabaseUrl, supabaseKey);
+const getSupabaseConfig = () => {
+  const url = import.meta.env.VITE_SUPABASE_URL || '';
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  const isConfigured = url && 
+                      key && 
+                      url !== 'YOUR_SUPABASE_URL' && 
+                      url !== 'mock.supabase.co' && 
+                      url.startsWith('http') &&
+                      !url.includes('undefined');
+  return { url, key, isConfigured };
+};
+
+const { url: supabaseUrl, key: supabaseKey, isConfigured: isConfiguredInitial } = getSupabaseConfig();
+const supabase = createClient(
+  isConfiguredInitial ? supabaseUrl : 'https://mock.supabase.co', 
+  isConfiguredInitial ? supabaseKey : 'mock-key'
+);
 
 const CAR_CATALOG: Record<string, Record<string, string[]>> = {
   
@@ -464,6 +478,7 @@ export default function App() {
   const [editCustomYear, setEditCustomYear] = useState('');
   const [editQuantity, setEditQuantity] = useState('1');
   const [editPrice, setEditPrice] = useState('');
+  const [editReferenceCode, setEditReferenceCode] = useState('');
   const [editManufacturer, setEditManufacturer] = useState('');
   const [editCustomManufacturer, setEditCustomManufacturer] = useState('');
   const [editPosition, setEditPosition] = useState('');
@@ -486,29 +501,40 @@ export default function App() {
   const [isProfileLoading, setIsProfileLoading] = useState(true);
 
   useEffect(() => {
-    const url = import.meta.env.VITE_SUPABASE_URL;
-    const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    const hasConfig = url && key && url !== 'YOUR_SUPABASE_URL' && url !== 'mock.supabase.co' && url.startsWith('http');
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (event.reason && event.reason.message === 'Failed to fetch') {
+        console.error('Network Error: Failed to fetch. This is likely due to an incorrect Supabase URL or network connectivity issues.');
+      }
+    };
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    return () => window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+  }, []);
+
+  useEffect(() => {
+    const { isConfigured: hasConfig } = getSupabaseConfig();
     if (!hasConfig) return;
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    }).catch(e => console.error("Supabase getSession error:", e));
+    try {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setSession(session);
+      }).catch(e => console.error("Supabase getSession error:", e));
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((_event, session) => {
+        setSession(session);
+      });
 
-    return () => subscription.unsubscribe();
+      return () => subscription.unsubscribe();
+    } catch (e) {
+      console.error("Supabase auth setup error:", e);
+    }
   }, []);
 
   useEffect(() => {
     const fetchProfile = async () => {
-      const url = import.meta.env.VITE_SUPABASE_URL;
-      const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const hasConfig = url && key && url !== 'YOUR_SUPABASE_URL' && url !== 'mock.supabase.co' && url.startsWith('http');
+      const { isConfigured: hasConfig } = getSupabaseConfig();
       if (!hasConfig) {
         setIsProfileLoading(false);
         return;
@@ -540,9 +566,7 @@ export default function App() {
     let interval: NodeJS.Timeout;
 
     const checkConfigAndFetch = async () => {
-      const url = import.meta.env.VITE_SUPABASE_URL;
-      const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const isValidConfig = url && key && url !== 'YOUR_SUPABASE_URL' && url !== 'mock.supabase.co' && url.startsWith('http');
+      const { isConfigured: isValidConfig } = getSupabaseConfig();
 
       if (isValidConfig) {
         setIsSupabaseConfigured(true);
@@ -574,13 +598,14 @@ export default function App() {
   }, [session]);
 
   const fetchSupabaseData = async (silent = false) => {
+    if (!isSupabaseConfigured || !session) return;
     try {
       if (!silent) setLoading(true);
       // Fetch inventory
       const { data: invData, error: invError } = await supabase
         .from('live_inventory')
         .select(`
-          inventory_id, master_sku, quantity, unit_price, manufacturer, position,
+          inventory_id, master_sku, quantity, unit_price, manufacturer, position, reference_code,
           universal_catalog (make, model, year)
         `)
         .eq('seller_id', TEST_SELLER_ID)
@@ -635,7 +660,7 @@ export default function App() {
     }
   };
 
-  const applyMatch = (match: any) => {
+  const applyMatch = async (match: any) => {
     const catalog = Array.isArray(match.universal_catalog) ? match.universal_catalog[0] : match.universal_catalog;
     
     const make = catalog.make;
@@ -659,6 +684,33 @@ export default function App() {
     setIsRecognized(true);
     setIsOverridingMatch(false);
     setBarcodeMatches([]);
+
+    // Auto-fill reference code from previous entries
+    if (isSupabaseConfigured && match.master_sku) {
+      try {
+        // We use (supabase as any) to force TypeScript to ignore the missing column types
+        const { data } = await (supabase as any)
+          .from('live_inventory')
+          .select('reference_code')
+          .eq('master_sku', match.master_sku)
+          .not('reference_code', 'is', null)
+          .limit(1)
+          .maybeSingle();
+        
+        // We also cast data as any so it doesn't complain about reading the property
+        if (data && (data as any).reference_code) {
+          setReferenceCode((data as any).reference_code);
+        } else {
+          setReferenceCode('');
+        }
+      } catch (err) {
+        console.error("Error fetching reference code:", err);
+        setReferenceCode('');
+      }
+    } else {
+      setReferenceCode('');
+    }
+
     quantityInputRef.current?.focus();
   };
 
@@ -671,6 +723,7 @@ export default function App() {
     setCustomBrand('');
     setCustomModel('');
     setCustomYear('');
+    setReferenceCode('');
   };
 
   const lookupBarcode = async (code: string) => {
@@ -679,12 +732,14 @@ export default function App() {
     
     setBarcodeMatches([]);
     setIsOverridingMatch(false);
+    setReferenceCode('');
 
     if (isSupabaseConfigured) {
       const { data: dictData, error: dictError } = await supabase
         .from('barcode_dictionary')
         .select(`
           master_sku,
+          position,
           universal_catalog (make, model, year)
         `)
         .ilike('factory_barcode', trimmedCode);
@@ -695,7 +750,7 @@ export default function App() {
           setIsRecognized(false);
           setScannedBarcode(trimmedCode);
         } else {
-          applyMatch(dictData[0]);
+          await applyMatch(dictData[0]);
           setScannedBarcode(trimmedCode);
         }
       } else {
@@ -891,10 +946,42 @@ export default function App() {
     if (isSupabaseConfigured) {
       setUpdatingOrderId(orderId);
       try {
-        const { error } = await supabase
-          .from('order_ledger')
-          .update({ status: newStatus })
-          .eq('id', orderId);
+        // 1. Fetch order details to know WHAT glass to deduct
+const { data: orderData, error: orderError } = await supabase
+  .from('order_ledger')
+  .select('inventory_id, quantity_ordered')
+  .eq('id', orderId)
+  .single();
+
+if (orderError) throw orderError;
+
+// 2. If marking as Completed, deduct inventory
+if (newStatus === 'Completed' && orderData) {
+  // Fetch current stock
+  const { data: invData, error: fetchError } = await supabase
+    .from('live_inventory')
+    .select('quantity')
+    .eq('inventory_id', orderData.inventory_id) // <--- FIXED HERE!
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  const newQuantity = (invData?.quantity || 0) - orderData.quantity_ordered;
+
+  // Update the stock in the database
+  const { error: updateInvError } = await supabase
+    .from('live_inventory')
+    .update({ quantity: newQuantity })
+    .eq('inventory_id', orderData.inventory_id); // <--- FIXED HERE!
+
+  if (updateInvError) throw updateInvError;
+}
+
+// 3. Finally, update the order status
+const { error } = await supabase
+  .from('order_ledger')
+  .update({ status: newStatus })
+  .eq('id', orderId);
 
         if (error) throw error;
 
@@ -975,6 +1062,7 @@ export default function App() {
 
     setEditQuantity(item.quantity?.toString() || '1');
     setEditPrice(item.unit_price?.toString() || '');
+    setEditReferenceCode(item.reference_code || '');
 
     const mfg = item.manufacturer || '';
     if (MANUFACTURERS.includes(mfg)) {
@@ -1076,7 +1164,8 @@ export default function App() {
           .from('live_inventory')
           .update({ 
             quantity: newQty,
-            unit_price: newPrice
+            unit_price: newPrice,
+            reference_code: editReferenceCode || null
           })
           .eq('inventory_id', editingItem.inventory_id);
       } else {
@@ -1097,7 +1186,8 @@ export default function App() {
             .from('live_inventory')
             .update({ 
               quantity: existingInv.quantity + newQty,
-              unit_price: newPrice
+              unit_price: newPrice,
+              reference_code: editReferenceCode || null
             })
             .eq('inventory_id', existingInv.inventory_id);
 
@@ -1115,7 +1205,8 @@ export default function App() {
               manufacturer: manufacturer,
               position: position,
               quantity: newQty,
-              unit_price: newPrice
+              unit_price: newPrice,
+              reference_code: editReferenceCode || null
             })
             .eq('inventory_id', editingItem.inventory_id);
         }
@@ -1398,9 +1489,9 @@ export default function App() {
                         </p>
                       </div>
                       <select
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const match = barcodeMatches.find(m => m.master_sku === e.target.value);
-                          if (match) applyMatch(match);
+                          if (match) await applyMatch(match);
                         }}
                         className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400"
                         defaultValue=""
@@ -2015,13 +2106,13 @@ export default function App() {
                         {item.universal_catalog?.make} {item.universal_catalog?.model} <span className="text-slate-400 font-normal mx-1">|</span> <span className="text-slate-600">{lang === 'fr' ? (positionTranslations[item.position] || item.position || t.unknownPosition) : (item.position || t.unknownPosition)}</span> <span className="text-slate-400 font-normal mx-1">|</span> <span className="text-indigo-600">{item.manufacturer || t.unknown}</span>
                       </h3>
                       <div className="flex items-center gap-3 mt-1">
-                        <p className="text-sm text-slate-500 font-medium">{item.universal_catalog?.year}</p>
-                        {item.reference_code && (
-                          <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                            {t.refCode}: {item.reference_code}
-                          </span>
-                        )}
-                      </div>
+  <p className="text-sm text-slate-500 font-medium">{item.universal_catalog?.year}</p>
+  {item.reference_code && (
+    <span className="ml-2 px-2 py-0.5 text-xs font-bold bg-red-50 text-red-600 border border-red-200 rounded-md">
+      REF: {item.reference_code}
+    </span>
+  )}
+</div>
                     </div>
                     
                     <div className="flex items-center justify-between sm:justify-end gap-8">
@@ -2226,6 +2317,16 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-100">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.refCode} (OPTIONAL)</label>
+                  <input
+                    type="text"
+                    value={editReferenceCode}
+                    onChange={(e) => setEditReferenceCode(e.target.value)}
+                    className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
+                    placeholder="e.g. REF-12345"
+                  />
+                </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.quantity}</label>
                   <input
