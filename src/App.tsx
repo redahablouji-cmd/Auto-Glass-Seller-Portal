@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Package, ShoppingCart, ArrowRightLeft, Plus, Minus, Upload, ScanLine, Pencil, X, Bell, User, Barcode, LogOut, LayoutDashboard, Boxes, ReceiptText, Settings, HeadphonesIcon, AlertTriangle, ChevronDown, Globe, Trash2, AlertCircle, Clock, History, Image } from 'lucide-react';
+import { Search, Package, ShoppingCart, ArrowRightLeft, Plus, Minus, Upload, ScanLine, Pencil, X, Bell, User, Barcode, LogOut, LayoutDashboard, Boxes, ReceiptText, Settings, HeadphonesIcon, AlertTriangle, ChevronDown, Globe, Trash2, AlertCircle, Clock, History, Image, Download } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Auth from './components/Auth';
 import { useLanguage } from './contexts/LanguageContext';
@@ -443,6 +443,7 @@ export default function App() {
   const [barcode, setBarcode] = useState('');
   const [scannedBarcode, setScannedBarcode] = useState('');
   const [isRecognized, setIsRecognized] = useState(false);
+  const [scannerKey, setScannerKey] = useState(0);
   
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
@@ -466,6 +467,22 @@ export default function App() {
   const [isScanning, setIsScanning] = useState(false);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const quantityInputRef = useRef<HTMLInputElement>(null);
+  // --- NEW: Shorthand Builder State ---
+  const [baseGlassType, setBaseGlassType] = useState(''); // Default to Pare-Brise
+  const [bodyType, setBodyType] = useState('');
+  
+  // Conditional State
+  const [rainSensor, setRainSensor] = useState('');
+  const [camera, setCamera] = useState('');
+  const [tint, setTint] = useState('');
+  
+  // Checkbox State (Technologies)
+  const [techHeated, setTechHeated] = useState(false);
+  const [techAcoustic, setTechAcoustic] = useState(false);
+  const [techAthermic, setTechAthermic] = useState(false);
+  const [techHud, setTechHud] = useState(false);
+  const [techAntenna, setTechAntenna] = useState(false);
+  const [techMolding, setTechMolding] = useState(false);
 
   // Edit Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -499,7 +516,48 @@ export default function App() {
   const [isCredentialModalOpen, setIsCredentialModalOpen] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
+// 1. Scanner Memory & Nuclear Key
+  const [lastScannedCode, setLastScannedCode] = useState('');
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+  const [scannerResetCounter, setScannerResetCounter] = useState(0);
 
+  // 2. The Master Reset Tool
+  const resetSmartScannerForm = (fullWipe: boolean = true) => {
+    setIsRecognized(false);
+    setIsOverridingMatch(false);
+    setBarcodeMatches([]);
+    setSelectedBrand('');
+    setSelectedModel('');
+    setSelectedYear('');
+    setCustomBrand('');
+    setCustomModel('');
+    setCustomYear('');
+    setSelectedPosition('');
+    setSelectedManufacturer('');
+    setReferenceCode('');
+    setBaseGlassType('');
+    setBodyType('');
+    setRainSensor('');
+    setCamera('');
+    setTint('');
+    setTechHeated(false);
+    setTechAcoustic(false);
+    setTechAthermic(false);
+    setTechHud(false);
+    setTechAntenna(false);
+    setTechMolding(false);
+    
+    if (fullWipe) {
+      setLastScannedCode(''); 
+      setScannedBarcode('');  // Wipes the text box
+      setBarcode('');         // <--- THE FIX: Wipes the USB Scanner's background memory!
+      setPrice('');    
+      setQuantity('');       
+    }
+    
+    // Forces React to build a fresh, empty text box
+    setScannerResetCounter(prev => prev + 1);
+  };
   useEffect(() => {
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       if (event.reason && event.reason.message === 'Failed to fetch') {
@@ -681,58 +739,76 @@ export default function App() {
       setCustomYear(year);
     }
     
+    if (match.position) {
+      setSelectedPosition(match.position);
+    }
+
     setIsRecognized(true);
     setIsOverridingMatch(false);
     setBarcodeMatches([]);
 
-    // Auto-fill reference code from previous entries
     if (isSupabaseConfigured && match.master_sku) {
       try {
-        // We use (supabase as any) to force TypeScript to ignore the missing column types
-        const { data } = await (supabase as any)
+        const { data, error } = await (supabase as any)
           .from('live_inventory')
-          .select('reference_code')
+          .select('reference_code, manufacturer, unit_price')
           .eq('master_sku', match.master_sku)
-          .not('reference_code', 'is', null)
           .limit(1)
           .maybeSingle();
         
-        // We also cast data as any so it doesn't complain about reading the property
-        if (data && (data as any).reference_code) {
-          setReferenceCode((data as any).reference_code);
+        if (error) throw error;
+
+        if (data) {
+          parseAndFillShorthand((data as any).reference_code || '');
+          
+          if ((data as any).manufacturer) {
+            setSelectedManufacturer((data as any).manufacturer); 
+          }
+
+          if ((data as any).unit_price !== null && (data as any).unit_price !== undefined) {
+            setPrice(String((data as any).unit_price)); 
+          } else {
+            setPrice('');
+          }
         } else {
-          setReferenceCode('');
-        }
-      } catch (err) {
-        console.error("Error fetching reference code:", err);
-        setReferenceCode('');
+        setPrice('');
+        // If no inventory history, use the dictionary's code
+        parseAndFillShorthand(match.reference_code || null);
       }
-    } else {
-      setReferenceCode('');
+    } catch (err) {
+      console.error("Error fetching inventory history:", err);
+      setPrice('');
+      // Fallback on error
+      parseAndFillShorthand(match.reference_code || null);
     }
+  } else {
+    setPrice('');
+    // Fallback if offline
+    parseAndFillShorthand(match.reference_code || null);
+  }
 
     quantityInputRef.current?.focus();
   };
 
-  const handleOverride = () => {
-    setIsOverridingMatch(true);
+const handleOverride = () => {
     setIsRecognized(false);
-    setSelectedBrand('');
-    setSelectedModel('');
-    setSelectedYear('');
-    setCustomBrand('');
-    setCustomModel('');
-    setCustomYear('');
-    setReferenceCode('');
+    setIsOverridingMatch(true);
   };
 
   const lookupBarcode = async (code: string) => {
     const trimmedCode = code.trim();
-    if (!trimmedCode) return;
     
-    setBarcodeMatches([]);
-    setIsOverridingMatch(false);
-    setReferenceCode('');
+    if (!trimmedCode) {
+      resetSmartScannerForm(true); 
+      return; 
+    }
+
+    if (trimmedCode === lastScannedCode) {
+      setDuplicateWarning(trimmedCode);
+      return; 
+    }
+    
+    setLastScannedCode(trimmedCode);
 
     if (isSupabaseConfigured) {
       const { data: dictData, error: dictError } = await supabase
@@ -740,6 +816,8 @@ export default function App() {
         .select(`
           master_sku,
           position,
+          Manufacturer,
+          reference_code,
           universal_catalog (make, model, year)
         `)
         .ilike('factory_barcode', trimmedCode);
@@ -755,7 +833,6 @@ export default function App() {
         }
       } else {
         if (scanAction === 'sold') {
-          // No alert here to avoid spamming if triggered on blur
           setScannedBarcode(trimmedCode);
           setIsRecognized(false);
         } else {
@@ -771,6 +848,9 @@ export default function App() {
             setCustomManufacturer('');
             setSelectedPosition('');
             setCustomPosition('');
+            // ---> TRIGGERS THE WIPE FOR UNKNOWN BARCODES <---
+            parseAndFillShorthand(null); 
+            setPrice('');
           }
           setScannedBarcode(trimmedCode);
         }
@@ -781,9 +861,105 @@ export default function App() {
       setSelectedModel('');
       setSelectedYear('');
       setScannedBarcode(trimmedCode);
+      // ---> TRIGGERS THE WIPE IF OFFLINE <---
+      parseAndFillShorthand(null);
+      setPrice('');
     }
   };
 
+// Generates the final shorthand string dynamically
+  const generateShorthandString = () => {
+    // 1. Tech Features Array
+    const techFeatures = [
+      techHeated ? 'CHAUFF' : '',
+      techAcoustic ? 'ACOUST' : '',
+      techAthermic ? 'ATHERM' : '',
+      techHud ? '+ HUD' : '',
+      techAntenna ? '+ ANT' : '',
+      techMolding ? '+ JOINT' : ''
+    ].filter(Boolean).join(' '); // Filters out empty strings and joins with spaces
+
+    // 2. Determine which conditionals to include based on Glass Type
+    const isPB = baseGlassType === 'PB';
+    const isSideOrRear = baseGlassType === 'VL' || baseGlassType === 'LA';
+
+    // 3. Build the String Parts according to your format
+    const stringParts = [
+      baseGlassType,
+      isPB ? rainSensor : '',
+      isPB ? camera : '',
+      (baseGlassType === 'PB' || baseGlassType === 'LA') ? techFeatures : '',
+      isSideOrRear ? tint : '',
+      selectedBrand, // From your existing state
+      selectedModel, // From your existing state
+      selectedYear,  // From your existing state
+      bodyType
+    ];
+
+    // 4. Filter empty items and join with a single space
+    return stringParts.filter(Boolean).join(' ');
+  };
+  // --- SHORTHAND DECODER (AUTOFILL) ---
+  // --- SHORTHAND DECODER (AUTOFILL & RESET) ---
+  const parseAndFillShorthand = (refString: string | null) => {
+    // 1. THE WIPE: If there is no string (new item), wipe the section clean!
+    if (!refString) {
+      setBaseGlassType('');
+      setBodyType('');
+      setRainSensor('');
+      setCamera('');
+      setTint('');
+      setTechHeated(false);
+      setTechAcoustic(false);
+      setTechAthermic(false);
+      setTechHud(false);
+      setTechAntenna(false);
+      setTechMolding(false);
+      return;
+    }
+    
+    // 2. Base Glass
+    if (refString.includes('PB')) setBaseGlassType('PB');
+    else if (refString.includes('LA')) setBaseGlassType('LA');
+    else if (refString.includes('VL')) setBaseGlassType('VL');
+    else if (refString.includes('DEF')) setBaseGlassType('DEF');
+
+    // 3. Body Type
+    if (refString.includes('3P')) setBodyType('3P');
+    else if (refString.includes('4P')) setBodyType('4P');
+    else if (refString.includes('5P')) setBodyType('5P');
+    else if (refString.includes('BRK')) setBodyType('BRK');
+    else if (refString.includes('CP')) setBodyType('CP');
+
+    // 4. Sensors
+    if (refString.includes('AD CARRE')) setRainSensor('AD CARRE');
+    else if (refString.includes('AD ROND')) setRainSensor('AD ROND');
+    else if (refString.includes('AD LOSANGE')) setRainSensor('AD LOSANGE');
+    else if (refString.includes('AD')) setRainSensor('AD');
+    else setRainSensor('SD');
+
+    // 5. Cameras
+    if (refString.includes('+ 2 CAM')) setCamera('+ 2 CAM');
+    else if (refString.includes('+ CAM')) setCamera('+ CAM');
+    else setCamera('');
+
+    // 6. Technologies
+    setTechHeated(refString.includes('CHAUFF'));
+    setTechAcoustic(refString.includes('ACOUST'));
+    setTechAthermic(refString.includes('ATHERM'));
+    setTechHud(refString.includes('+ HUD'));
+    setTechAntenna(refString.includes('+ ANT'));
+    setTechMolding(refString.includes('+ JOINT'));
+
+    // 7. Tint
+    if (refString.includes('CLAIR')) setTint('CLAIR');
+    else if (refString.includes('FUME')) setTint('FUME');
+    else if (refString.includes('BLEU')) setTint('BLEU');
+    else setTint('');
+  };
+
+  // This variable holds the live string to display/save
+  const currentShorthand = generateShorthandString();
   const handleScanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid) return;
@@ -796,12 +972,14 @@ export default function App() {
         const model = selectedBrand === 'OTHER' ? customModel : selectedModel;
         const year = selectedBrand === 'OTHER' ? customYear : selectedYear;
         const manufacturer = selectedManufacturer === 'Other' ? customManufacturer : selectedManufacturer;
-        const position = selectedPosition === 'Other' ? customPosition : selectedPosition;
+        // Replace the old selectedPosition with our new baseGlassType
+    const position = baseGlassType;
 
-        if (!make || !model || !year || !manufacturer || !position) {
-          alert("Please fill in all car details, manufacturer, and position.");
-          return;
-        }
+    // Add bodyType to the safety check
+    if (!make || !model || !year || !manufacturer || !position || !bodyType) {
+      alert("Please fill in all car details, manufacturer, position, and body type.");
+      return;
+    }
 
         // 1. Generate readable master_sku
         const masterSku = `${make} ${model} ${year}`.toUpperCase();
@@ -856,7 +1034,7 @@ export default function App() {
               .update({ 
                 quantity: existingInv.quantity + qtyNum,
                 ...(priceNum ? { unit_price: priceNum } : {}),
-                ...(referenceCode ? { reference_code: referenceCode } : {})
+                ...(referenceCode ? { reference_code: currentShorthand } : {})
                })
               .eq('inventory_id', existingInv.inventory_id);
           } else {
@@ -869,8 +1047,8 @@ export default function App() {
                 quantity: qtyNum,
                 unit_price: priceNum || 0,
                 manufacturer: manufacturer,
-                position: position,
-                reference_code: referenceCode || null
+                position: baseGlassType,
+                reference_code: currentShorthand || null
               });
           }
         } else {
@@ -890,23 +1068,8 @@ export default function App() {
         await fetchSupabaseData();
         
         // Reset form
-        setBarcode('');
-        setScannedBarcode('');
-        setIsRecognized(false);
-        setSelectedBrand('');
-        setSelectedModel('');
-        setSelectedYear('');
-        setCustomBrand('');
-        setCustomModel('');
-        setCustomYear('');
-        setQuantity('1');
-        if (scanAction === 'add') setPrice('');
-        setReferenceCode('');
-        setSelectedPosition('');
-        setCustomPosition('');
-        
-        setBarcodeMatches([]);
-        setIsOverridingMatch(false);
+        // Reset form
+      resetSmartScannerForm(true);;
         
         barcodeInputRef.current?.focus();
       } catch (error) {
@@ -942,6 +1105,35 @@ export default function App() {
     }
   };
 
+// 1. State for the Inventory Modal
+const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
+
+// 2. CSV Download Logic
+const downloadHistoryCSV = () => {
+  const historyOrders = orders.filter(o => ['Completed', 'Rejected', 'Cancelled'].includes(o.status));
+  const headers = ['Date', 'Brand', 'Model', 'Year', 'Position', 'Price', 'Qty', 'Total', 'Status'];
+  
+  const rows = historyOrders.map(o => [
+    new Date(o.created_at).toLocaleDateString(),
+    (o.live_inventory as any)?.universal_catalog?.make || '',
+    (o.live_inventory as any)?.universal_catalog?.model || '',
+    (o.live_inventory as any)?.universal_catalog?.year || '',
+    (o.live_inventory as any)?.position || '',
+    o.unit_price,
+    o.quantity_ordered,
+    o.total_price,
+    o.status
+  ]);
+
+  const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", "seller_order_history.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
   const handleUpdateOrderStatus = async (orderId: string, newStatus: string) => {
     if (isSupabaseConfigured) {
       setUpdatingOrderId(orderId);
@@ -1103,7 +1295,18 @@ const { error } = await supabase
       // Close modals
       setIsDeleteModalOpen(false);
       setIsEditModalOpen(false);
-      
+      // HARD WORKSPACE RESET (Safety Measure)
+    setScannedBarcode('');  // <--- FIXED: Now matches your real state!
+      setLastScannedCode(''); // <--- ADDED: Wipes the duplicate memory
+      setIsRecognized(false);
+      setSelectedBrand('');
+      setSelectedModel('');
+      setSelectedYear('');
+      setSelectedPosition('');
+      setSelectedManufacturer('');
+      setReferenceCode('');
+    // Ensure this next line matches your actual Search state name (e.g., setSearchQuery or setInventorySearchQuery)
+    // setInventorySearchQuery('');
       // Show success toast
       setSuccessMessage(t.itemDeletedSuccess);
       setTimeout(() => setSuccessMessage(null), 3000);
@@ -1114,6 +1317,7 @@ const { error } = await supabase
     } finally {
       setIsDeleting(false);
     }
+    resetSmartScannerForm(true);
   };
 
   const handleMoveVehicle = async () => {
@@ -1123,10 +1327,12 @@ const { error } = await supabase
     const model = editBrand === 'OTHER' ? editCustomModel : editModel;
     const year = editBrand === 'OTHER' ? editCustomYear : editYear;
     const manufacturer = editManufacturer === 'Other' ? editCustomManufacturer : editManufacturer;
-    const position = editPosition === 'Other' ? editCustomPosition : editPosition;
+    // Replace the old selectedPosition with our new baseGlassType
+    const position = baseGlassType;
 
-    if (!make || !model || !year || !manufacturer || !position) {
-      alert("Please fill in all car details, manufacturer, and position.");
+    // Add bodyType to the safety check
+    if (!make || !model || !year || !manufacturer || !position || !bodyType) {
+      alert("Please fill in all car details, manufacturer, position, and body type.");
       return;
     }
 
@@ -1203,7 +1409,7 @@ const { error } = await supabase
             .update({ 
               master_sku: newMasterSku,
               manufacturer: manufacturer,
-              position: position,
+              position: baseGlassType,
               quantity: newQty,
               unit_price: newPrice,
               reference_code: editReferenceCode || null
@@ -1215,10 +1421,22 @@ const { error } = await supabase
       await fetchSupabaseData();
       setIsEditModalOpen(false);
       setEditingItem(null);
+      // HARD WORKSPACE RESET (Safety Measure)
+      // HARD WORKSPACE RESET (Safety Measure)
+      setScannedBarcode('');  // Clears the scanner box visually
+      setIsRecognized(false);
+      setSelectedBrand('');
+      setSelectedModel('');
+      setSelectedYear('');
+      setSelectedPosition('');
+      setSelectedManufacturer('');
+      setReferenceCode('');
+      // (lastScannedCode is intentionally NOT cleared so the warning works!)
     } catch (error) {
       console.error('Error moving/editing vehicle:', error);
       alert('An error occurred while saving changes.');
     }
+    resetSmartScannerForm(true);
   };
 
   const qtyNum = parseInt(quantity, 10);
@@ -1235,17 +1453,13 @@ const { error } = await supabase
   const isPositionValid = selectedPosition !== '' && (selectedPosition !== 'Other' || customPosition.trim() !== '');
 
   const isFormValid = 
-    barcode.trim() !== '' && 
-    barcode.trim() === scannedBarcode && 
-    isQtyValid && 
-    isPriceValid && 
-    isCategorized &&
-    isManufacturerValid &&
-    isPositionValid;
-
-  if (!session) {
-    return <Auth onLogin={setSession} />;
-  }
+    scannedBarcode !== '' && 
+    (selectedBrand !== '' || customBrand !== '') && 
+    (selectedModel !== '' || customModel !== '') && 
+    (selectedYear !== '' || customYear !== '') && 
+    baseGlassType !== '' &&   // <-- Now checks the new Glass Type!
+    bodyType !== '' &&        // <-- Now checks the new Body Type!
+    parseInt(quantity) > 0;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans relative overflow-hidden selection:bg-cyan-200">
@@ -1408,9 +1622,11 @@ const { error } = await supabase
               
               {/* Action Toggle */}
               <div className="flex p-1 bg-slate-200/50 rounded-full w-fit border border-slate-300/30">
-                <button 
-                  type="button"
-                  onClick={() => setScanAction('add')}
+                <button
+        onClick={() => {
+          setScanAction('add');        // 1. Switches the mode
+          resetSmartScannerForm(true); // 2. Wipes the scanner clean!
+        }}
                   className={`px-5 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${
                     scanAction === 'add' 
                       ? 'bg-white shadow-sm text-cyan-600' 
@@ -1419,9 +1635,11 @@ const { error } = await supabase
                 >
                   {t.addToInventory}
                 </button>
-                <button 
-                  type="button"
-                  onClick={() => setScanAction('sold')}
+                <button
+        onClick={() => {
+          setScanAction('sold');       // 1. Switches the mode
+          resetSmartScannerForm(true); // 2. Wipes the scanner clean!
+        }}
                   className={`px-5 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${
                     scanAction === 'sold' 
                       ? 'bg-white shadow-sm text-indigo-600' 
@@ -1439,6 +1657,9 @@ const { error } = await supabase
                   <Barcode className={`h-6 w-6 transition-colors ${scanAction === 'add' ? 'text-cyan-500' : 'text-indigo-500'}`} />
                 </div>
                 <input
+                  id="main-barcode-input"
+                  key={scannerResetCounter}
+                  autoComplete="off"
                   ref={barcodeInputRef}
                   type="text"
                   value={barcode}
@@ -1594,21 +1815,6 @@ const { error } = await supabase
                             ))}
                           </select>
                         </div>
-                        
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.glassPosition}</label>
-                          <select
-                            value={selectedPosition}
-                            onChange={(e) => setSelectedPosition(e.target.value)}
-                            className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400"
-                            required
-                          >
-                            <option value="" disabled>{t.selectPosition}</option>
-                            {GLASS_POSITIONS.map(pos => (
-                              <option key={pos} value={pos}>{getTranslatedPosition(pos)}</option>
-                            ))}
-                          </select>
-                        </div>
                       </div>
 
                       {selectedBrand === 'OTHER' && (
@@ -1680,18 +1886,146 @@ const { error } = await supabase
                   )}
                 </div>
               )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="sm:col-span-3">
-                  <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.refCode} (OPTIONAL)</label>
-                  <input
-                    type="text"
-                    value={referenceCode}
-                    onChange={(e) => setReferenceCode(e.target.value)}
-                    className="block w-full px-4 py-3 border border-slate-200 rounded-xl bg-white/50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400 transition-all font-bold text-lg"
-                    placeholder="e.g. REF-12345"
-                  />
+              {/* --- SMART IDENTIFICATION DETAILS (HIDDEN UNTIL SCAN) --- */}
+          {scannedBarcode && (
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mt-6 space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+              <h3 className="font-semibold text-slate-700 text-sm uppercase tracking-wider mb-2">Part Identification Details</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Full French Glass List with Hidden Abbreviations */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Position du Vitrage (Required)</label>
+                  <select 
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-cyan-500"
+                    value={baseGlassType}
+                    onChange={(e) => setBaseGlassType(e.target.value)}
+                    required
+                  >
+                    <option value="" disabled>Sélectionner une position...</option>
+                    <option value="PB">Pare-brise avant (PB)</option>
+                    <option value="LA">Lunette arrière (LA)</option>
+                    <option value="VL">Vitre porte avant gauche (VL)</option>
+                    <option value="VL">Vitre porte avant droite (VL)</option>
+                    <option value="VL">Vitre porte arrière gauche (VL)</option>
+                    <option value="VL">Vitre porte arrière droite (VL)</option>
+                    <option value="VL">Vitre de custode (VL)</option>
+                    <option value="DEF">Déflecteur (DEF)</option>
+                  </select>
                 </div>
+
+                {/* Body Type */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Body Type (Required)</label>
+                  <select 
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-cyan-500"
+                    value={bodyType}
+                    onChange={(e) => setBodyType(e.target.value)}
+                    required
+                  >
+                    <option value="" disabled>Select Body Type...</option>
+                    <option value="3P">3 Portes (3P)</option>
+                    <option value="4P">4 Portes (4P)</option>
+                    <option value="5P">5 Portes (5P)</option>
+                    <option value="BRK">Break (BRK)</option>
+                    <option value="CP">Coupé (CP)</option>
+                  </select>
+                </div>
+
+                {/* Tint (Only shows if VL or LA is selected) */}
+                {(baseGlassType === 'VL' || baseGlassType === 'LA') && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Teinte du Verre</label>
+                    <select 
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-cyan-500"
+                      value={tint}
+                      onChange={(e) => setTint(e.target.value)}
+                    >
+                      <option value="">Vert (Standard)</option>
+                      <option value="CLAIR">Clair / Blanc</option>
+                      <option value="FUME">Surteinté / Fumé</option>
+                      <option value="BLEU">Bleu</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* PB ONLY: Sensors and Cameras */}
+              {baseGlassType === 'PB' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-200">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Détecteur de Pluie / Lumière</label>
+                    <select 
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-cyan-500"
+                      value={rainSensor}
+                      onChange={(e) => setRainSensor(e.target.value)}
+                    >
+                      <option value="SD">Sans Détecteur (SD)</option>
+                      <option value="AD">Avec Détecteur (AD)</option>
+                      <option value="AD CARRE">Détecteur Carré</option>
+                      <option value="AD ROND">Détecteur Rond</option>
+                      <option value="AD LOSANGE">Détecteur Losange</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Caméra d'Aide à la Conduite</label>
+                    <select 
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-cyan-500"
+                      value={camera}
+                      onChange={(e) => setCamera(e.target.value)}
+                    >
+                      <option value="">Sans Caméra</option>
+                      <option value="+ CAM">1 Caméra (+ CAM)</option>
+                      <option value="+ 2 CAM">2 Caméras (+ 2 CAM)</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* PB or LA ONLY: Special Technologies */}
+              {(baseGlassType === 'PB' || baseGlassType === 'LA') && (
+                <div className="pt-2 border-t border-slate-200">
+                  <label className="block text-xs font-semibold text-slate-500 mb-2">Special Technologies</label>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-y-2 gap-x-4">
+                    <label className="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                      <input type="checkbox" checked={techHeated} onChange={(e) => setTechHeated(e.target.checked)} className="rounded text-cyan-600" />
+                      <span>Chauffant</span>
+                    </label>
+                    <label className="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                      <input type="checkbox" checked={techAcoustic} onChange={(e) => setTechAcoustic(e.target.checked)} className="rounded text-cyan-600" />
+                      <span>Acoustique</span>
+                    </label>
+                    <label className="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                      <input type="checkbox" checked={techAthermic} onChange={(e) => setTechAthermic(e.target.checked)} className="rounded text-cyan-600" />
+                      <span>Athermique</span>
+                    </label>
+                    <label className="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                      <input type="checkbox" checked={techHud} onChange={(e) => setTechHud(e.target.checked)} className="rounded text-cyan-600" />
+                      <span>HUD</span>
+                    </label>
+                    <label className="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                      <input type="checkbox" checked={techAntenna} onChange={(e) => setTechAntenna(e.target.checked)} className="rounded text-cyan-600" />
+                      <span>Antenne Intégrée</span>
+                    </label>
+                    <label className="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                      <input type="checkbox" checked={techMolding} onChange={(e) => setTechMolding(e.target.checked)} className="rounded text-cyan-600" />
+                      <span>Avec Joint / Encapsulé</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* The Shorthand Output Box */}
+              <div className="mt-4 p-3 bg-slate-900 rounded-lg border border-slate-800 shadow-inner">
+                 <div className="text-xs text-slate-400 mb-1 uppercase tracking-wider font-semibold">Generated Reference Code</div>
+                 <div className="font-mono text-cyan-400 font-bold text-lg">
+                    {currentShorthand || "Awaiting mandatory inputs..."}
+                 </div>
+              </div>
+            </div>
+          )}
+          {/* --- END SMART IDENTIFICATION DETAILS --- */}
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
                 <div className="sm:col-span-1">
                   <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{t.quantity}</label>
                   <input
@@ -1739,7 +2073,7 @@ const { error } = await supabase
               </div>
             </form>
           </div>
-        </section>
+          </section>
 
         {/* 2. Middle Section: Office Dashboard (Order Management) */}
         <section className="space-y-8">
@@ -1970,81 +2304,7 @@ const { error } = await supabase
             </div>
           </div>
 
-          {/* ZONE C: Order History (My Transactions) */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 px-2">
-              <History className="w-5 h-5 text-slate-400" />
-              <h3 className="text-lg font-bold text-slate-700">{t.orderHistory}</h3>
-              <span className="text-xs font-bold px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full border border-slate-200 uppercase tracking-wider">
-                {t.myTransactions}
-              </span>
-            </div>
-            
-            <div className="grid gap-3">
-              {orders.filter(o => o.status === 'Completed' || o.status === 'Rejected' || o.status === 'Cancelled').length === 0 ? (
-                <div className="text-center py-6 text-slate-400 bg-white/40 rounded-2xl border border-dashed border-slate-200 italic">
-                  {t.noOrders}
-                </div>
-              ) : (
-                orders.filter(o => o.status === 'Completed' || o.status === 'Rejected' || o.status === 'Cancelled').map((order) => (
-                  <div key={order.id} className="bg-white/60 backdrop-blur-sm border border-slate-200 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 opacity-80 hover:opacity-100 transition-all">
-                    <div className="flex items-center gap-4 flex-1">
-                      <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 shrink-0">
-                        <History className="w-4 h-4 text-slate-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2 mb-1">
-                          <span className="font-mono text-[9px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 uppercase tracking-tight">{order.transaction_id}</span>
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
-                            order.status === 'Completed' ? 'text-slate-600 bg-slate-50 border-slate-200' : 
-                            order.status === 'Cancelled' ? 'text-orange-500 bg-orange-50 border-orange-100' :
-                            'text-red-500 bg-red-50 border-red-100'
-                          }`}>
-                            {order.status}
-                          </span>
-                        </div>
-                        <h3 className="font-bold text-slate-700 text-sm truncate">
-                          {order.profiles?.business_name || t.unknown}
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {order.live_inventory?.make || ''} {order.live_inventory?.model || ''} ({order.live_inventory?.year || ''}) • {getTranslatedPosition(order.live_inventory?.position)}
-                        </p>
-                        {order.reference_code && (
-                          <p className="text-xs mt-1">
-                            <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-100">{t.refCode}: {order.reference_code}</span>
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      {order.request_photo_url && (
-                        <button 
-                          onClick={() => window.open(order.request_photo_url, '_blank')}
-                          className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-indigo-700 py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all border border-indigo-200 hover:border-indigo-300 shadow-sm"
-                        >
-                          <Image className="w-3 h-3 text-indigo-500" />
-                          {t.viewRefPhoto}
-                        </button>
-                      )}
-                      {order.po_file_url && (
-                        <button 
-                          onClick={() => window.open(order.po_file_url, '_blank')}
-                          className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-500 py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all border border-slate-200 hover:border-slate-300 shadow-sm"
-                        >
-                          <Upload className="w-3 h-3" />
-                          {t.viewPO}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </section>
-
-        {/* 3. Bottom Section: Active Inventory Catalog */}
+{/* 3. Bottom Section: Active Inventory Catalog */}
         <section>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 px-2 gap-4">
             <h2 className="text-lg font-bold flex items-center gap-2 text-slate-800">
@@ -2088,7 +2348,7 @@ const { error } = await supabase
                            manufacturer.includes(searchStr) || 
                            position.includes(searchStr);
                   })
-                  .map((item) => (
+                  .slice(0, 8).map((item) => (
                   <div key={item.inventory_id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/40 transition-colors">
                     <div className="flex-1 min-w-0 pr-4">
                       <div className="flex items-center gap-2 mb-1">
@@ -2113,6 +2373,16 @@ const { error } = await supabase
     </span>
   )}
 </div>
+{inventory.length > 8 && (
+  <div className="p-4 bg-white/50 border-t border-slate-100 flex justify-center">
+    <button 
+      onClick={() => setIsInventoryModalOpen(true)}
+      className="px-6 py-2 bg-indigo-50 text-indigo-600 font-bold text-sm rounded-xl hover:bg-indigo-100 transition-colors"
+    >
+      Show All Inventory ({inventory.length} items)
+    </button>
+  </div>
+)}
                     </div>
                     
                     <div className="flex items-center justify-between sm:justify-end gap-8">
@@ -2146,7 +2416,110 @@ const { error } = await supabase
           </div>
         </section>
 
-      </main>
+      
+          {/* ZONE C: Order History (My Transactions) */}
+          <div className="space-y-4">
+            
+            {/* NEW TITLE AREA WITH CSV BUTTON */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between px-2 mb-4 gap-4">
+              <div className="flex items-center gap-2">
+                <History className="w-5 h-5 text-slate-400" />
+                <h3 className="text-lg font-bold text-slate-700">{t.orderHistory || "My Transactions"}</h3>
+              </div>
+              <button 
+                onClick={downloadHistoryCSV}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-bold rounded-xl hover:bg-slate-800 transition-colors shadow-sm"
+              >
+                <Download className="w-4 h-4" /> Download CSV
+              </button>
+            </div>
+            
+            {/* NEW TABLE DESIGN */}
+            <div className="grid gap-3">
+              {orders.filter(o => ['Completed', 'Rejected', 'Cancelled'].includes(o.status)).length === 0 ? (
+                <div className="text-center py-6 text-slate-400 bg-white/40 rounded-2xl border border-dashed border-slate-200 italic">
+                  {t.noOrders}
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                  
+                  {/* Table Header (Hidden on Mobile) */}
+                  <div className="hidden md:grid grid-cols-12 gap-4 p-4 bg-slate-50/80 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    <div className="col-span-2">Date</div>
+                    <div className="col-span-4">Item Details</div>
+                    <div className="col-span-2">Unit Price</div>
+                    <div className="col-span-1">Qty</div>
+                    <div className="col-span-2">Total</div>
+                    <div className="col-span-1">Status</div>
+                  </div>
+                  
+                  {/* Table Rows */}
+                  <div className="divide-y divide-slate-100">
+                    {orders.filter(o => ['Completed', 'Rejected', 'Cancelled'].includes(o.status)).map((order) => (
+                      <div key={order.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 items-center hover:bg-slate-50/50 transition-colors">
+                        
+                        <div className="col-span-2 text-sm text-slate-500 flex md:block justify-between">
+                          <div className="font-semibold text-slate-700">{new Date(order.created_at).toLocaleDateString()}</div>
+                          <div className="text-xs">{new Date(order.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                        </div>
+                        
+                        <div className="col-span-4">
+  <div className="font-bold text-slate-800">
+    {(order.live_inventory as any)?.universal_catalog?.make} {(order.live_inventory as any)?.universal_catalog?.model}
+  </div>
+  <div className="text-xs text-slate-500 mt-0.5">
+    • {(order.live_inventory as any)?.manufacturer} • {(order.live_inventory as any)?.universal_catalog?.year}
+  </div>
+  <div className="flex gap-3 mt-2">
+    {order.request_photo_url && (
+      <button onClick={() => window.open(order.request_photo_url, '_blank')} className="text-[10px] text-indigo-600 font-bold flex items-center gap-1 hover:text-indigo-800">
+        <Image className="w-3 h-3" /> {t.viewRefPhoto}
+      </button>
+    )}
+    {order.po_file_url && (
+      <button onClick={() => window.open(order.po_file_url, '_blank')} className="text-[10px] text-slate-500 font-bold flex items-center gap-1 hover:text-slate-700">
+        <Upload className="w-3 h-3" /> {t.viewPO}
+      </button>
+    )}
+  </div>
+</div>
+                        
+                        <div className="col-span-2 font-bold text-slate-800 text-sm flex md:block justify-between">
+                          <span className="md:hidden text-xs font-normal text-slate-400">Price:</span>
+                          {order.unit_price} MAD
+                        </div>
+                        
+                        <div className="col-span-1 text-sm text-slate-600 font-medium flex md:block justify-between">
+                          <span className="md:hidden text-xs font-normal text-slate-400">Qty:</span>
+                          x{order.quantity_ordered}
+                        </div>
+                        
+                        <div className="col-span-2 font-bold text-blue-600 text-sm flex md:block justify-between">
+                          <span className="md:hidden text-xs font-normal text-slate-400">Total:</span>
+                          {order.total_price} MAD
+                        </div>
+                        
+                        <div className="col-span-1 flex md:block justify-end">
+                          <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            order.status === 'Completed' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                            order.status === 'Rejected' ? 'bg-red-50 text-red-600 border border-red-100' :
+                            'bg-orange-50 text-orange-600 border border-orange-100'
+                          }`}>
+                            {order.status}
+                          </span>
+                        </div>
+          
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        
+      </section>
+
+        
 
       {/* Edit Vehicle Modal */}
       {isEditModalOpen && (
@@ -2546,6 +2919,143 @@ const { error } = await supabase
         <div className="fixed bottom-4 right-4 z-[100] bg-green-600 text-white px-6 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-in slide-in-from-bottom-5 fade-in duration-300">
           <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
           <p className="font-semibold">{successMessage}</p>
+        </div>
+      )}
+      </main>
+      {/* Full Inventory Modal */}
+{isInventoryModalOpen && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+      
+      {/* Modal Header */}
+      <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50/50">
+        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+          <Package className="w-6 h-6 text-cyan-500" />
+          Full Active Inventory ({inventory.length} items)
+        </h2>
+        <button
+          onClick={() => setIsInventoryModalOpen(false)}
+          className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+        >
+          {/* If you don't have an 'X' icon imported, you can just use text: "Close" */}
+          <span className="font-bold text-lg px-2">X</span>
+        </button>
+      </div>
+
+      {/* Modal Body (Scrollable) */}
+      <div className="overflow-y-auto p-6">
+        <div className="divide-y divide-slate-100/80">
+          
+          {/* WE WILL REUSE YOUR INVENTORY CODE HERE */}
+          {inventory.map((item) => (
+            <div key={item.inventory_id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50 transition-colors">
+              <div className="flex-1">
+                <h3 className="font-bold text-slate-800 text-lg">
+                  {item.universal_catalog?.make} {item.universal_catalog?.model}
+                </h3>
+                <div className="text-sm text-slate-500 mt-1 flex gap-2 items-center">
+                  <span>{item.universal_catalog?.year}</span>
+                  <span>•</span>
+                  <span>{item.position}</span>
+                  <span>•</span>
+                  <span>{item.manufacturer}</span>
+                  {item.reference_code && (
+                    <span className="ml-2 px-2 py-0.5 text-xs font-bold bg-red-50 text-red-600 border border-red-200 rounded-md">
+                      REF: {item.reference_code}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="font-bold text-slate-800 text-lg">
+                  {item.unit_price} <span className="text-xs text-slate-500">MAD</span>
+                </div>
+                <div className="text-sm font-medium text-slate-500 mt-1">
+                  Qty: {item.quantity}
+                </div>
+              </div>
+            </div>
+          ))}
+
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+{/* Duplicate Scan Warning Modal */}
+      {duplicateWarning && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-orange-100">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                {/* You can use an AlertTriangle icon here if you have it imported, otherwise text is fine */}
+                <span className="text-3xl font-bold">!</span>
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Duplicate Scan Detected</h3>
+              <p className="text-slate-600 mb-6">
+                You just scanned the barcode <span className="font-bold text-slate-800">{duplicateWarning}</span>. Are you sure you want to rescan and overwrite your current workspace?
+              </p>
+              
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={() => setDuplicateWarning(null)} // The "NO" button
+                  className="px-6 py-2.5 font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                >
+                  No, Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    // The "YES" button: wipe the memory and force the scan!
+                    setBarcode(''); // <--- MAKE SURE THIS WORD MATCHES YOUR STATE
+                    setDuplicateWarning(null);
+                    lookupBarcode(duplicateWarning); // Instantly search it again
+                  }}
+                  className="px-6 py-2.5 font-bold text-white bg-orange-500 hover:bg-orange-600 rounded-xl transition-colors shadow-sm"
+                >
+                  Yes, Rescan
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Duplicate Scan Warning Modal */}
+      {duplicateWarning && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-orange-100">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl font-bold">!</span>
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Duplicate Scan Detected</h3>
+              <p className="text-slate-600 mb-6">
+                You just added/scanned the barcode <span className="font-bold text-slate-800">{duplicateWarning}</span>. Are you sure you want to reuse it?
+              </p>
+              
+              <div className="flex gap-3 justify-center">
+                <button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setDuplicateWarning(null);
+                    resetSmartScannerForm(true); // Wipes it clean so they can start fresh
+                  }} 
+                  className="px-6 py-2.5 font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                >
+                  No, Cancel
+                </button>
+                <button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setDuplicateWarning(null);
+                    resetSmartScannerForm(true); // Nuclear wipe
+                  }}
+                  className="px-6 py-2.5 font-bold text-white bg-orange-500 hover:bg-orange-600 rounded-xl transition-colors shadow-sm"
+                >
+                  Yes, Reset Scanner
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
