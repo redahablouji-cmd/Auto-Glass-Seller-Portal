@@ -461,7 +461,32 @@ export default function App() {
   const [barcodeMatches, setBarcodeMatches] = useState<any[]>([]);
   const [isOverridingMatch, setIsOverridingMatch] = useState(false);
 
-  const [quantity, setQuantity] = useState('1');
+  const [quantity, setQuantity] = useState('');
+  // --- PHOTO UPLOAD STATES ---
+  const [partPhoto, setPartPhoto] = useState<File | null>(null);
+  const [partPhotoUrl, setPartPhotoUrl] = useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  // --- MAGIC PASTE LISTENER (CTRL+V) ---
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        // Look for an image or PDF being pasted
+        if (items[i].type.indexOf('image') !== -1 || items[i].type === 'application/pdf') {
+          const file = items[i].getAsFile();
+          if (file) {
+            setPartPhoto(file);
+            setPartPhotoUrl(URL.createObjectURL(file)); // Creates a fast local preview!
+          }
+          break;
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
   const [price, setPrice] = useState('');
   const [referenceCode, setReferenceCode] = useState('');
   const [isScanning, setIsScanning] = useState(false);
@@ -552,7 +577,9 @@ export default function App() {
       setScannedBarcode('');  // Wipes the text box
       setBarcode('');         // <--- THE FIX: Wipes the USB Scanner's background memory!
       setPrice('');    
-      setQuantity('');       
+      setQuantity('');   
+      setPartPhoto(null);
+      setPartPhotoUrl(null);    
     }
     
     // Forces React to build a fresh, empty text box
@@ -769,6 +796,13 @@ export default function App() {
             setPrice(String((data as any).unit_price)); 
           } else {
             setPrice('');
+            
+          }
+          // Auto-fill the photo if it exists!
+          if ((data as any).photo_url) {
+            setPartPhotoUrl((data as any).photo_url);
+          } else {
+            setPartPhotoUrl(null);
           }
         } else {
         setPrice('');
@@ -968,17 +1002,43 @@ const handleOverride = () => {
     
     if (isSupabaseConfigured) {
       try {
+        setIsUploadingPhoto(true);
+      let finalPhotoUrl = partPhotoUrl; // Use the auto-filled one by default
+
+      // If they pasted/uploaded a BRAND NEW file, upload it to the Bucket!
+      if (partPhoto) {
+        const fileExt = partPhoto.name.split('.').pop() || 'png';
+        const fileName = `${Date.now()}_inventory.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('inventory_photos')
+          .upload(fileName, partPhoto);
+
+        if (uploadError) {
+          console.error("Upload error:", uploadError);
+          alert("Failed to upload photo. Please try again.");
+          setIsUploadingPhoto(false);
+          return; // Stop the insertion if upload fails
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('inventory_photos')
+          .getPublicUrl(fileName);
+          
+        finalPhotoUrl = publicUrl; 
+      }
+      setIsUploadingPhoto(false);
         const make = selectedBrand === 'OTHER' ? customBrand : selectedBrand;
         const model = selectedBrand === 'OTHER' ? customModel : selectedModel;
         const year = selectedBrand === 'OTHER' ? customYear : selectedYear;
         const manufacturer = selectedManufacturer === 'Other' ? customManufacturer : selectedManufacturer;
         // Replace the old selectedPosition with our new baseGlassType
-    const position = baseGlassType;
+        const position = baseGlassType;
 
-    // Add bodyType to the safety check
-    if (!make || !model || !year || !manufacturer || !position || !bodyType) {
-      alert("Please fill in all car details, manufacturer, position, and body type.");
-      return;
+        // Add bodyType to the safety check
+        if (!make || !model || !year || !manufacturer || !position || !bodyType) {
+        alert("Please fill in all car details, manufacturer, position, and body type.");
+        return;
     }
 
         // 1. Generate readable master_sku
@@ -991,6 +1051,7 @@ const handleOverride = () => {
             master_sku: masterSku,
             make,
             model,
+            photo_url: finalPhotoUrl,
             year
           });
           
@@ -1009,6 +1070,7 @@ const handleOverride = () => {
             .from('barcode_dictionary')
             .insert({
               factory_barcode: scannedBarcode,
+              photo_url: finalPhotoUrl,
               master_sku: masterSku
             });
         }
@@ -1327,12 +1389,13 @@ const { error } = await supabase
     const model = editBrand === 'OTHER' ? editCustomModel : editModel;
     const year = editBrand === 'OTHER' ? editCustomYear : editYear;
     const manufacturer = editManufacturer === 'Other' ? editCustomManufacturer : editManufacturer;
-    // Replace the old selectedPosition with our new baseGlassType
-    const position = baseGlassType;
+    
+    // 1. Make sure it uses the old editPosition, NOT baseGlassType!
+    const position = editPosition === 'Other' ? editCustomPosition : editPosition;
 
-    // Add bodyType to the safety check
-    if (!make || !model || !year || !manufacturer || !position || !bodyType) {
-      alert("Please fill in all car details, manufacturer, position, and body type.");
+    // 2. Remove bodyType from this check!
+    if (!make || !model || !year || !manufacturer || !position) {
+      alert("Please fill in all car details, manufacturer, and position.");
       return;
     }
 
@@ -2021,6 +2084,49 @@ const { error } = await supabase
                     {currentShorthand || "Awaiting mandatory inputs..."}
                  </div>
               </div>
+              {/* --- REQUIRED PART PHOTO UPLOAD --- */}
+            <div className="mt-4 p-5 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl hover:bg-slate-100 transition-colors relative">
+              <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider">
+                Part Condition Photo (Required)
+              </label>
+              
+              <div className="flex flex-col sm:flex-row items-center gap-4">
+                <input
+                  type="file"
+                  accept="image/*, application/pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setPartPhoto(file);
+                      setPartPhotoUrl(URL.createObjectURL(file));
+                    }
+                  }}
+                  className="w-full text-sm text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                />
+                
+                <div className="text-xs text-slate-400 italic text-center sm:text-left whitespace-nowrap">
+                  Or press <kbd className="bg-white px-2 py-1 rounded border shadow-sm text-slate-600 font-sans mx-1">Ctrl</kbd> + <kbd className="bg-white px-2 py-1 rounded border shadow-sm text-slate-600 font-sans mx-1">V</kbd> to paste
+                </div>
+              </div>
+
+              {/* Image Preview Window */}
+              {partPhotoUrl && (
+                <div className="mt-4 relative inline-block rounded-lg overflow-hidden border border-slate-200 shadow-sm">
+                  {partPhotoUrl.includes('pdf') ? (
+                     <div className="bg-red-50 text-red-600 px-6 py-4 font-bold text-sm">PDF Attached ✓</div>
+                  ) : (
+                    <img src={partPhotoUrl} alt="Part Preview" className="h-32 object-cover" />
+                  )}
+                  <button 
+                    type="button"
+                    onClick={() => { setPartPhoto(null); setPartPhotoUrl(null); }}
+                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs hover:bg-red-600 shadow-lg"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+            </div>
             </div>
           )}
           {/* --- END SMART IDENTIFICATION DETAILS --- */}
