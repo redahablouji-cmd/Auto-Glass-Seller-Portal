@@ -774,6 +774,11 @@ export default function App() {
     setIsOverridingMatch(false);
     setBarcodeMatches([]);
 
+    if (!match) return;
+    
+    // ---> ADD THIS EXACT LINE HERE! <---
+    setQuantity('1');
+
     if (isSupabaseConfigured && match.master_sku) {
       try {
         const { data, error } = await (supabase as any)
@@ -1051,7 +1056,6 @@ const handleOverride = () => {
             master_sku: masterSku,
             make,
             model,
-            photo_url: finalPhotoUrl,
             year
           });
           
@@ -1070,7 +1074,6 @@ const handleOverride = () => {
             .from('barcode_dictionary')
             .insert({
               factory_barcode: scannedBarcode,
-              photo_url: finalPhotoUrl,
               master_sku: masterSku
             });
         }
@@ -1096,7 +1099,8 @@ const handleOverride = () => {
               .update({ 
                 quantity: existingInv.quantity + qtyNum,
                 ...(priceNum ? { unit_price: priceNum } : {}),
-                ...(referenceCode ? { reference_code: currentShorthand } : {})
+                ...(referenceCode ? { reference_code: currentShorthand } : {}),
+                photo_url: finalPhotoUrl
                })
               .eq('inventory_id', existingInv.inventory_id);
           } else {
@@ -1110,7 +1114,9 @@ const handleOverride = () => {
                 unit_price: priceNum || 0,
                 manufacturer: manufacturer,
                 position: baseGlassType,
-                reference_code: currentShorthand || null
+                reference_code: currentShorthand || null,
+                photo_url: finalPhotoUrl
+
               });
           }
         } else {
