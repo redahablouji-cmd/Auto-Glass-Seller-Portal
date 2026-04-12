@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Package, ShoppingCart, ArrowRightLeft, Plus, Minus, Upload, ScanLine, Pencil, X, Bell, User, Barcode, LogOut, LayoutDashboard, Boxes, ReceiptText, Settings, HeadphonesIcon, AlertTriangle, ChevronDown, Globe, Trash2, AlertCircle, Clock, History, Image, Download } from 'lucide-react';
+import { Search, Package, ShoppingCart, ArrowRightLeft, Plus, Minus, Upload, ScanLine, Pencil, X, Bell, User, Barcode, LogOut, LayoutDashboard, Boxes, ReceiptText, Settings, HeadphonesIcon, AlertTriangle, ChevronDown, Globe, Trash2, AlertCircle, Clock, History, Image, Download, Lock, Unlock, Eye, EyeOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Auth from './components/Auth';
 import { useLanguage } from './contexts/LanguageContext';
@@ -414,6 +414,8 @@ export interface InventoryItem {
 export default function App() {
   const { lang, setLang, t } = useLanguage();
   const [session, setSession] = useState<any>(null);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const TEST_SELLER_ID = session?.user?.id || 'a1111111-1111-1111-1111-111111111111';
 
   const getTranslatedPosition = (pos: string) => {
@@ -539,8 +541,189 @@ export default function App() {
   // Profile Dropdown State
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isCredentialModalOpen, setIsCredentialModalOpen] = useState(false);
-  const [userProfile, setUserProfile] = useState<any>(null);
-  const [isProfileLoading, setIsProfileLoading] = useState(true);
+  // --- STAFF MANAGEMENT LOGIC ---
+  const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
+  const [isAddStaffModalOpen, setIsAddStaffModalOpen] = useState(false);
+  const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
+  const [staffMembers, setStaffMembers] = useState<any[]>([]);
+  const [newStaff, setNewStaff] = useState({ firstName: '', surname: '', cin: '', pin: '', id: '' });
+  const [showPin, setShowPin] = useState(false);
+  const [staffToDelete, setStaffToDelete] = useState<string | null>(null);
+
+  // The NEW Custom ID Generator Engine (Now works during edits!)
+  React.useEffect(() => {
+    // We removed the 'if (!editingStaffId)' block so it ALWAYS recalculates when you type!
+    if (newStaff.firstName.trim().length >= 2 && newStaff.surname.trim().length >= 1 && newStaff.cin.trim().length >= 4) {
+      
+      // 1. Get real Business Code
+      const bCode = userProfile?.business_code || 'SHOP00'; 
+      
+      // 2. Split the Business Code
+      const codeBase = bCode.slice(0, -2).toUpperCase();
+      const codeEnd = bCode.slice(-2).toUpperCase();    
+      
+      // 3. Get Parts
+      const firstPart = newStaff.firstName.trim().substring(0, 2).toUpperCase();
+      const lastPart = newStaff.surname.trim().substring(0, 1).toUpperCase();
+      const cinPart = newStaff.cin.trim().toUpperCase();
+
+      // 4. Build the Final Format
+      setNewStaff(prev => ({ 
+        ...prev, 
+        id: `${codeBase}-${firstPart}${codeEnd}${lastPart}-${cinPart}` 
+      }));
+    } else {
+      setNewStaff(prev => ({ ...prev, id: '' }));
+    }
+  }, [newStaff.firstName, newStaff.surname, newStaff.cin, userProfile]);
+// --- FETCH STAFF FROM CLOUD ---
+  React.useEffect(() => {
+    const fetchStaff = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('retail_staff')
+        .select('*')
+        .eq('boss_id', user.id); // Only fetch THIS seller's staff
+
+      if (!error && data) {
+        // Map the database columns exactly to our React state
+        const formattedStaff = data.map(staff => ({
+          firstName: staff.first_name,
+          surname: staff.surname,
+          cin: staff.cin,
+          pin: staff.pin_code, // Connect the PIN!
+          id: staff.scanner_id, 
+          status: staff.status
+        }));
+        setStaffMembers(formattedStaff);
+      }
+    };
+
+    if (isStaffModalOpen) {
+      fetchStaff();
+    }
+  }, [isStaffModalOpen]);
+
+  // --- DELETE FROM CLOUD ---
+  // --- EXECUTE DELETE FROM CLOUD ---
+  const executeDeleteStaff = async () => {
+    if (!staffToDelete) return; // Safety check
+
+    try {
+      // 1. Delete from Supabase Database
+      const { error } = await supabase
+        .from('retail_staff')
+        .delete()
+        .eq('scanner_id', staffToDelete);
+
+      if (error) {
+        alert("Error deleting: " + error.message);
+        return;
+      }
+
+      // 2. Delete from Local Screen
+      setStaffMembers(prev => prev.filter(staff => staff.id !== staffToDelete));
+      setSuccessMessage("Staff member permanently deleted.");
+      
+    } catch (err) {
+      console.error("Network Error:", err);
+      alert("Connection error while trying to delete.");
+    } finally {
+      // 3. Close the modal!
+      setStaffToDelete(null);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    }
+  };
+
+  const handleToggleStaffStatus = (id: string) => {
+    setStaffMembers(prev => prev.map(staff => 
+      staff.id === id ? { ...staff, status: staff.status === 'Active' ? 'Blocked' : 'Active' } : staff
+    ));
+  };
+
+  const openEditStaffModal = (staff: any) => {
+    setEditingStaffId(staff.id); // Turn on Edit Mode
+    
+    // SAFETY NET: If the staff has old 'name' data, split it safely!
+    const fName = staff.firstName || (staff.name ? staff.name.split(' ')[0] : '');
+    const sName = staff.surname || (staff.name ? staff.name.split(' ').slice(1).join(' ') : '');
+
+    setNewStaff({ 
+      firstName: fName, 
+      surname: sName, 
+      cin: staff.cin || '',
+      pin: staff.pin || '', 
+      id: staff.id 
+    }); 
+    setIsAddStaffModalOpen(true);
+  };
+
+  // --- SAVE TO CLOUD ---
+  const handleSaveStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // 1. Get the Boss's secure ID from Supabase
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return alert("Error: User not found.");
+
+    const bCode = userProfile?.business_code || 'SHOP00';
+
+    if (editingStaffId) {
+      // --- UPDATE EXISTING STAFF IN SUPABASE ---
+      const { error } = await supabase
+        .from('retail_staff')
+        .update({
+          first_name: newStaff.firstName,
+          surname: newStaff.surname,
+          cin: newStaff.cin,
+          pin_code: newStaff.pin,
+          scanner_id: newStaff.id // The newly generated scanner ID
+        })
+        .eq('scanner_id', editingStaffId); // Find them by their old scanner ID
+
+      if (error) return alert("Error updating: " + error.message);
+
+      // Update Local Screen
+      setStaffMembers(prev => prev.map(staff => 
+        staff.id === editingStaffId ? { 
+          ...staff, 
+          firstName: newStaff.firstName, 
+          surname: newStaff.surname, 
+          cin: newStaff.cin,
+          pin: newStaff.pin,
+          id: newStaff.id
+        } : staff
+      ));
+      setSuccessMessage("Staff credentials updated!");
+
+    } else {
+      // --- INSERT NEW STAFF INTO SUPABASE ---
+      const { error } = await supabase
+        .from('retail_staff')
+        .insert([{
+          boss_id: user.id,
+          boss_business_code: bCode,
+          first_name: newStaff.firstName,
+          surname: newStaff.surname,
+          cin: newStaff.cin,
+          pin_code: newStaff.pin,
+          scanner_id: newStaff.id,
+          status: 'Active'
+        }]);
+
+      if (error) return alert("Error saving: " + error.message);
+
+      // Update Local Screen
+      setStaffMembers([...staffMembers, { ...newStaff, status: 'Active' }]);
+      setSuccessMessage("Staff account created successfully!");
+    }
+
+    setIsAddStaffModalOpen(false);
+    setEditingStaffId(null);
+    setTimeout(() => setSuccessMessage(null), 3000);
+  };
 // 1. Scanner Memory & Nuclear Key
   const [lastScannedCode, setLastScannedCode] = useState('');
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
@@ -631,7 +814,7 @@ export default function App() {
         if (user) {
           const { data, error } = await supabase
             .from('profiles')
-            .select('business_name, role')
+            .select('business_name, role, business_code')
             .eq('user_id', user.id)
             .single();
           
@@ -1590,40 +1773,27 @@ const { error } = await supabase
                   <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
                     {/* Account Header */}
                     <div className="bg-slate-50 p-4 border-b border-slate-100">
-                      {isProfileLoading ? (
-                        <div className="space-y-2 animate-pulse">
-                          <div className="h-5 bg-slate-200 rounded w-3/4"></div>
-                          <div className="h-4 bg-slate-200 rounded w-1/2"></div>
-                          <div className="h-4 bg-slate-200 rounded w-2/3"></div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="font-bold text-slate-800 truncate">
-                            {userProfile?.business_name || 'Business Name'}
-                          </div>
-                          <div className="text-sm text-slate-500 mt-1">
-                            {userProfile?.role ? (lang === 'fr' ? (userProfile.role === 'Buyer' ? t.buyer : t.seller) : userProfile.role) : 'Role'}
-                          </div>
-                        </>
-                      )}
+                      <div className="font-bold text-slate-800 truncate">
+                        34 auto glass
+                      </div>
+                      <div className="text-sm text-slate-500 mt-1">
+                        {t.seller}
+                      </div>
                     </div>
 
                     {/* Quick Links */}
                     <div className="p-2">
-                      <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg transition-colors text-left">
-                        <LayoutDashboard className="w-4 h-4" /> {t.dashboard}
+                      <button 
+                        onClick={() => {
+                          setIsProfileDropdownOpen(false);
+                          setIsStaffModalOpen(true);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg transition-colors text-left"
+                      >
+                        <User className="w-4 h-4" /> {t.staffManagement}
                       </button>
-                      <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg transition-colors text-left">
-                        <Boxes className="w-4 h-4" /> {t.myInventory}
-                      </button>
-                      <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg transition-colors text-left">
-                        <ReceiptText className="w-4 h-4" /> {t.orderLedger}
-                      </button>
-                      <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg transition-colors text-left">
-                        <Settings className="w-4 h-4" /> {t.preferences}
-                      </button>
-                      <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg transition-colors text-left">
-                        <HeadphonesIcon className="w-4 h-4" /> {t.helpSupport}
+                      <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg transition-colors text-left group">
+                        <HeadphonesIcon className="w-4 h-4 group-hover:text-cyan-600" /> {t.helpSupport}
                       </button>
                     </div>
 
@@ -1651,10 +1821,10 @@ const { error } = await supabase
                               console.error("Sign out error:", e);
                             }
                           } else {
-                            setSession(null);
+                            window.location.reload();
                           }
                         }}
-                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-colors text-left"
+                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors text-left font-medium"
                       >
                         <LogOut className="w-4 h-4" /> {t.logOut}
                       </button>
@@ -3094,37 +3264,240 @@ const { error } = await supabase
     </div>
   </div>
 )}
-{/* Duplicate Scan Warning Modal */}
-      {duplicateWarning && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-orange-100">
-            <div className="p-6 text-center">
-              <div className="w-16 h-16 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                {/* You can use an AlertTriangle icon here if you have it imported, otherwise text is fine */}
-                <span className="text-3xl font-bold">!</span>
+      {/* Staff Management Modal */}
+      {isStaffModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/95 backdrop-blur-md overflow-y-auto">
+          <div className="w-full max-w-5xl min-h-[80vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-800">Staff Management</h2>
+                <p className="text-slate-500">Manage your retail scanner team</p>
               </div>
-              <h3 className="text-xl font-bold text-slate-800 mb-2">Duplicate Scan Detected</h3>
-              <p className="text-slate-600 mb-6">
-                You just scanned the barcode <span className="font-bold text-slate-800">{duplicateWarning}</span>. Are you sure you want to rescan and overwrite your current workspace?
-              </p>
-              
-              <div className="flex gap-3 justify-center">
-                <button
-                  onClick={() => setDuplicateWarning(null)} // The "NO" button
-                  className="px-6 py-2.5 font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => {
+                    setEditingStaffId(null); // Ensure we are in "Create" mode
+                    setNewStaff({ firstName: '', surname: '', cin: '', id: '', pin: '' });
+                    setIsAddStaffModalOpen(true);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg shadow-sm hover:bg-cyan-700 transition-colors font-semibold"
                 >
-                  No, Cancel
+                  <Plus className="w-4 h-4" /> Add New Staff
+                </button>
+                <button 
+                  onClick={() => setIsStaffModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-white rounded-full transition-colors border border-slate-200"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Full Name</th>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">CIN</th>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Scanner ID</th>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {staffMembers.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">
+                        No staff members found.
+                      </td>
+                    </tr>
+                  ) : (
+                    staffMembers.map((member) => (
+                      <tr key={member.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-6 py-4 font-bold text-slate-800">{member.firstName} {member.surname}</td>
+                        <td className="px-6 py-4 font-mono text-sm text-slate-600">{member.cin}</td>
+                        <td className="px-6 py-4">
+                          <span className={`flex w-fit items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold ${
+                            member.status === 'Active' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${member.status === 'Active' ? 'bg-green-600' : 'bg-amber-500'}`}></span>
+                            {member.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="bg-slate-100 text-slate-700 px-2 py-1 rounded font-mono text-xs border border-slate-200">
+                            {member.id}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 flex justify-end gap-1.5">
+                          {/* 1. The Block/Unblock Button */}
+                          <button 
+                            onClick={() => handleToggleStaffStatus(member.id)}
+                            className={`p-2 rounded-lg transition-colors ${member.status === 'Active' ? 'text-amber-500 hover:bg-amber-50' : 'text-green-600 hover:bg-green-50'}`}
+                            title={member.status === 'Active' ? "Block Access" : "Restore Access"}
+                          >
+                            {member.status === 'Active' ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                          </button>
+                          
+                          {/* 2. The Edit Button */}
+                          <button 
+                            onClick={() => openEditStaffModal(member)}
+                            className="p-2 text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors"
+                            title="Edit Credentials"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+
+                          {/* 3. The Delete Button */}
+                          <button 
+  type="button" 
+  onClick={() => setStaffToDelete(member.id)}
+  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+  title="Delete Staff"
+>
+  <Trash2 className="w-4 h-4" />
+</button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Edit Staff Modal */}
+      {isAddStaffModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-slate-800">
+                {editingStaffId ? "Edit Staff Credentials" : "Add New Staff"}
+              </h3>
+              <button onClick={() => setIsAddStaffModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSaveStaff} className="p-6 space-y-4">
+              
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">First Name</label>
+                  <input 
+                    required
+                    type="text"
+                    value={newStaff.firstName}
+                    onChange={(e) => setNewStaff({ ...newStaff, firstName: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 outline-none transition-all"
+                    placeholder="e.g. Ahmed"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Surname</label>
+                  <input 
+                    required
+                    type="text"
+                    value={newStaff.surname}
+                    onChange={(e) => setNewStaff({ ...newStaff, surname: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 outline-none transition-all"
+                    placeholder="e.g. Alami"
+                  />
+                </div>
+              </div>
+              
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">CIN (National ID)</label>
+                  <input 
+                    required
+                    type="text"
+                    value={newStaff.cin}
+                    onChange={(e) => setNewStaff({ ...newStaff, cin: e.target.value.toUpperCase() })}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 outline-none transition-all uppercase"
+                    placeholder="e.g. BA45667"
+                  />
+                </div>
+                
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Mobile App PIN</label>
+                  <div className="relative">
+                    <input 
+                      required
+                      type={showPin ? "text" : "password"}
+                      maxLength={4}
+                      pattern="\d{4}"
+                      value={newStaff.pin}
+                      onChange={(e) => setNewStaff({ ...newStaff, pin: e.target.value.replace(/\D/g, '') })}
+                      className="w-full pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 outline-none transition-all font-mono tracking-widest text-center"
+                      placeholder="••••"
+                      title="Please enter exactly 4 digits"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPin(!showPin)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-cyan-600 transition-colors p-1"
+                      title={showPin ? "Hide PIN" : "Show PIN"}
+                    >
+                      {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <label className="block text-xs font-bold text-cyan-700 uppercase mb-1.5">Scanner ID (Login)</label>
+                <div className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-600 font-mono text-sm shadow-inner min-h-[46px] flex items-center">
+                  {newStaff.id || <span className="text-slate-400 italic text-xs">Enter Name & CIN to generate...</span>}
+                </div>
+              </div>
+
+              <div className="pt-4 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsAddStaffModalOpen(false)}
+                  className="flex-1 px-4 py-2.5 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                >
+                  Cancel
                 </button>
                 <button
-                  onClick={() => {
-                    // The "YES" button: wipe the memory and force the scan!
-                    setBarcode(''); // <--- MAKE SURE THIS WORD MATCHES YOUR STATE
-                    setDuplicateWarning(null);
-                    lookupBarcode(duplicateWarning); // Instantly search it again
-                  }}
-                  className="px-6 py-2.5 font-bold text-white bg-orange-500 hover:bg-orange-600 rounded-xl transition-colors shadow-sm"
+                  type="submit"
+                  disabled={!newStaff.id}
+                  className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 rounded-xl transition-colors shadow-sm"
                 >
-                  Yes, Rescan
+                  {editingStaffId ? "Save Changes" : "Create Account"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* DELETE CONFIRMATION MODAL */}
+      {staffToDelete && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8 text-red-600" />
+              </div>
+              <h2 className="text-xl font-black text-slate-800 mb-2">Delete Staff Member?</h2>
+              <p className="text-sm text-slate-500 mb-6">
+                Are you absolutely sure? This will permanently remove their access to the mobile scanner app. This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setStaffToDelete(null)}
+                  className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={executeDeleteStaff}
+                  className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-colors shadow-lg shadow-red-600/20"
+                >
+                  Yes, Delete
                 </button>
               </div>
             </div>
