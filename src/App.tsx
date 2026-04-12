@@ -1244,64 +1244,66 @@ const handleOverride = () => {
           
         if (catError) throw catError;
 
-        // 3. Link in barcode_dictionary (Insert to allow multiple matches or override)
-        const { data: existingLink } = await supabase
-          .from('barcode_dictionary')
-          .select('factory_barcode')
-          .eq('factory_barcode', scannedBarcode)
-          .eq('master_sku', masterSku)
-          .maybeSingle();
+        // 1. SAVE TO DICTIONARY (With Error Catching)
+      const { error: dictErr } = await supabase
+        .from('barcode_dictionary')
+        .upsert({
+          factory_barcode: scannedBarcode,
+          master_sku: masterSku,
+          position: baseGlassType || null,
+          reference_code: currentShorthand || null
+        }, { onConflict: 'factory_barcode' }); // Tells Supabase to update if it exists
 
-        if (!existingLink) {
+      if (dictErr) {
+        alert("DICTIONARY ERROR: " + dictErr.message);
+        return; // Stops the code if the dictionary fails
+      }
+
+      const qtyNum = parseInt(quantity, 10);
+
+      // 2. CHECK EXISTING INVENTORY
+      const { data: existingInv, error: invError } = await supabase
+        .from('live_inventory')
+        .select('inventory_id, quantity')
+        .eq('seller_id', TEST_SELLER_ID)
+        .eq('master_sku', masterSku)
+        .eq('manufacturer', manufacturer)
+        .eq('position', position)
+        .maybeSingle();
+
+      if (scanAction === 'add') {
+        const priceNum = parseFloat(price);
+        if (existingInv) {
+          // --- UPDATE EXISTING ITEM ---
           await supabase
-            .from('barcode_dictionary')
+            .from('live_inventory')
+            .update({
+              quantity: existingInv.quantity + qtyNum,
+              ...(priceNum ? { unit_price: priceNum } : {}),
+              ...(currentShorthand ? { reference_code: currentShorthand } : {}),
+              photo_url: finalPhotoUrl
+            })
+            .eq('inventory_id', existingInv.inventory_id);
+        } else {
+          // --- INSERT NEW ITEM (Loud Version) ---
+          const { error: insertErr } = await supabase
+            .from('live_inventory')
             .insert({
-              factory_barcode: scannedBarcode,
-              master_sku: masterSku
+              seller_id: TEST_SELLER_ID,
+              master_sku: masterSku,
+              factory_barcode: scannedBarcode, // 🌟 THIS MUST SAVE 🌟
+              quantity: qtyNum,
+              unit_price: priceNum || 0,
+              manufacturer: manufacturer,
+              position: baseGlassType,
+              reference_code: currentShorthand || null,
+              photo_url: finalPhotoUrl
             });
-        }
-
-        const qtyNum = parseInt(quantity, 10);
-
-        // 4. Check existing inventory
-        const { data: existingInv, error: invError } = await supabase
-          .from('live_inventory')
-          .select('inventory_id, quantity')
-          .eq('seller_id', TEST_SELLER_ID)
-          .eq('master_sku', masterSku)
-          .eq('manufacturer', manufacturer)
-          .eq('position', position)
-          .maybeSingle();
-
-        if (scanAction === 'add') {
-          const priceNum = parseFloat(price);
-          if (existingInv) {
-            // Update existing
-            await supabase
-              .from('live_inventory')
-              .update({ 
-                quantity: existingInv.quantity + qtyNum,
-                ...(priceNum ? { unit_price: priceNum } : {}),
-                ...(referenceCode ? { reference_code: currentShorthand } : {}),
-                photo_url: finalPhotoUrl
-               })
-              .eq('inventory_id', existingInv.inventory_id);
-          } else {
-            // Insert new
-            await supabase
-              .from('live_inventory')
-              .insert({
-                seller_id: TEST_SELLER_ID,
-                master_sku: masterSku,
-                quantity: qtyNum,
-                unit_price: priceNum || 0,
-                manufacturer: manufacturer,
-                position: baseGlassType,
-                reference_code: currentShorthand || null,
-                photo_url: finalPhotoUrl
-
-              });
+            
+          if (insertErr) {
+            alert("LIVE INVENTORY ERROR: " + insertErr.message);
           }
+        }
         } else {
           // Sold offline
           if (existingInv) {
