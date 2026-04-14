@@ -9,7 +9,8 @@ import { createClient } from '@supabase/supabase-js';
 import Auth from './components/Auth';
 import { useLanguage } from './contexts/LanguageContext';
 import SearchableSelect from './components/SearchableSelect';
-
+// Look closely at the curly brackets!
+import { supabase } from './supabase';
 // Initialize Supabase client
 const getSupabaseConfig = () => {
   const url = import.meta.env.VITE_SUPABASE_URL || '';
@@ -23,11 +24,7 @@ const getSupabaseConfig = () => {
   return { url, key, isConfigured };
 };
 
-const { url: supabaseUrl, key: supabaseKey, isConfigured: isConfiguredInitial } = getSupabaseConfig();
-const supabase = createClient(
-  isConfiguredInitial ? supabaseUrl : 'https://mock.supabase.co', 
-  isConfiguredInitial ? supabaseKey : 'mock-key'
-);
+
 
 const CAR_CATALOG: Record<string, Record<string, string[]>> = {
   
@@ -867,21 +864,28 @@ export default function App() {
 
   const fetchSupabaseData = async (silent = false) => {
     if (!isSupabaseConfigured || !session) return;
+    
     try {
       if (!silent) setLoading(true);
-      // Fetch inventory
+
+      // 1. Fetch Inventory AND cross the bridge to get Car Details
       const { data: invData, error: invError } = await supabase
         .from('live_inventory')
-        .select(`
-          inventory_id, master_sku, quantity, unit_price, manufacturer, position, reference_code,
-          universal_catalog (make, model, year)
-        `)
+        .select('*, universal_catalog(make, model, year)')
         .eq('seller_id', TEST_SELLER_ID)
         .order('inventory_id', { ascending: false });
-      
-      if (!invError && invData) setInventory(invData as any);
 
-      // Fetch orders manually to bypass failing relational joins
+      if (!invError && invData) {
+        // Flatten the data so the UI doesn't crash
+        const flatInventory = invData.map(item => ({
+          ...item,
+          make: (item.universal_catalog as any)?.make || '',
+          model: (item.universal_catalog as any)?.model || '',
+          year: (item.universal_catalog as any)?.year || ''
+        }));
+        setInventory(flatInventory as any);
+      }
+// 2. Fetch Orders AND cross the bridge to get Car Details
       const { data: rawOrders, error: ordError } = await supabase
         .from('order_ledger')
         .select('*')
@@ -891,22 +895,15 @@ export default function App() {
       
       if (!ordError && rawOrders) {
         const enrichedOrders = await Promise.all(rawOrders.map(async (order) => {
-          // Fetch Inventory Details manually with catalog join
+          
+          // A. Fetch the Car Details
           const { data: invDetails } = await supabase
             .from('live_inventory')
             .select('*, universal_catalog(make, model, year)')
             .eq('inventory_id', order.inventory_id)
             .maybeSingle();
 
-          // Flatten catalog details into live_inventory object
-          const enrichedInv = invDetails ? {
-            ...invDetails,
-            make: invDetails.universal_catalog?.make,
-            model: invDetails.universal_catalog?.model,
-            year: invDetails.universal_catalog?.year
-          } : null;
-
-          // Fetch Buyer Details manually
+          // B. Fetch the Buyer Details (Using user_id based on your screenshot!)
           const { data: buyerDetails } = await supabase
             .from('profiles')
             .select('business_name')
@@ -915,10 +912,16 @@ export default function App() {
 
           return {
             ...order,
-            live_inventory: enrichedInv,
-            profiles: buyerDetails
+            profiles: buyerDetails, // <-- This hands the name to your CSV!
+            live_inventory: invDetails ? {
+              ...invDetails,
+              make: (invDetails.universal_catalog as any)?.make || '',
+              model: (invDetails.universal_catalog as any)?.model || '',
+              year: (invDetails.universal_catalog as any)?.year || ''
+            } : null
           };
         }));
+        
         setOrders(enrichedOrders);
       }
     } catch (error) {
@@ -1364,17 +1367,19 @@ const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
 // 2. CSV Download Logic
 const downloadHistoryCSV = () => {
   const historyOrders = orders.filter(o => ['Completed', 'Rejected', 'Cancelled'].includes(o.status));
-  const headers = ['Date', 'Brand', 'Model', 'Year', 'Position', 'Price', 'Qty', 'Total', 'Status'];
+  // Updated headers for the Excel file
+  const headers = ['Date', 'Buyer Name', 'Brand', 'Model', 'Year', 'Position', 'Price', 'Qty', 'Total', 'Status'];
   
   const rows = historyOrders.map(o => [
     new Date(o.created_at).toLocaleDateString(),
-    (o.live_inventory as any)?.universal_catalog?.make || '',
-    (o.live_inventory as any)?.universal_catalog?.model || '',
-    (o.live_inventory as any)?.universal_catalog?.year || '',
+    `"${(o.profiles as any)?.business_name || 'Unknown Buyer'}"`, // Quotes prevent comma bugs in Excel
+    (o.live_inventory as any)?.make || '',
+    (o.live_inventory as any)?.model || '',
+    (o.live_inventory as any)?.year || '',
     (o.live_inventory as any)?.position || '',
-    o.unit_price,
-    o.quantity_ordered,
-    o.total_price,
+    o.price || 0,
+    o.quantity || 1,
+    (o.price || 0) * (o.quantity || 1),
     o.status
   ]);
 
@@ -1714,6 +1719,11 @@ const { error } = await supabase
     baseGlassType !== '' &&   // <-- Now checks the new Glass Type!
     bodyType !== '' &&        // <-- Now checks the new Body Type!
     parseInt(quantity) > 0;
+    // --- THE BOUNCER ---
+  // If there is no session memory, STOP the code and show the Login screen!
+  if (!session) {
+    return <Auth /> 
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans relative overflow-hidden selection:bg-cyan-200">
@@ -1815,17 +1825,24 @@ const { error } = await supabase
                     {/* Sign Out */}
                     <div className="p-2 border-t border-slate-100 bg-slate-50">
                       <button 
-                        onClick={async () => {
-                          if (isSupabaseConfigured) {
-                            try {
-                              await supabase.auth.signOut();
-                            } catch (e) {
-                              console.error("Sign out error:", e);
-                            }
-                          } else {
-                            window.location.reload();
-                          }
-                        }}
+                        onClick={(e) => {
+          e.preventDefault(); // Prevents any weird default button behaviors
+
+          // 1. INSTANT UI UPDATE: Instantly kick the user back to the login screen
+          setSession(null);
+          
+          // 2. Wipe the local browser memory
+          localStorage.clear();
+          sessionStorage.clear();
+          
+          // 3. BACKGROUND CLEANUP: Tell Supabase to sign out, but DO NOT 'await' it. 
+          // This stops the button from freezing if the network is slow.
+          if (isSupabaseConfigured) {
+            supabase.auth.signOut().catch((err) => {
+              console.error("Silent background sign out error:", err);
+            });
+          }
+        }}
                         className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors text-left font-medium"
                       >
                         <LogOut className="w-4 h-4" /> {t.logOut}
@@ -2728,14 +2745,15 @@ const { error } = await supabase
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                   
                   {/* Table Header (Hidden on Mobile) */}
-                  <div className="hidden md:grid grid-cols-12 gap-4 p-4 bg-slate-50/80 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    <div className="col-span-2">Date</div>
-                    <div className="col-span-4">Item Details</div>
-                    <div className="col-span-2">Unit Price</div>
-                    <div className="col-span-1">Qty</div>
-                    <div className="col-span-2">Total</div>
-                    <div className="col-span-1">Status</div>
-                  </div>
+<div className="hidden md:grid grid-cols-12 gap-4 p-4 bg-slate-50/80 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+  <div className="col-span-2">Date</div>
+  <div className="col-span-3">Item Details</div>
+  <div className="col-span-2">Unit Price</div>
+  <div className="col-span-1">Qty</div>
+  <div className="col-span-2">Total</div>
+  <div className="col-span-1">Status</div>
+  <div className="col-span-1 text-right">BDC</div> {/* <-- Pushed to the right */}
+</div>
                   
                   {/* Table Rows */}
                   <div className="divide-y divide-slate-100">
@@ -2747,50 +2765,61 @@ const { error } = await supabase
                           <div className="text-xs">{new Date(order.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
                         </div>
                         
-                        <div className="col-span-4">
-  <div className="font-bold text-slate-800">
-    {(order.live_inventory as any)?.universal_catalog?.make} {(order.live_inventory as any)?.universal_catalog?.model}
-  </div>
-  <div className="text-xs text-slate-500 mt-0.5">
-    • {(order.live_inventory as any)?.manufacturer} • {(order.live_inventory as any)?.universal_catalog?.year}
-  </div>
-  <div className="flex gap-3 mt-2">
-    {order.request_photo_url && (
-      <button onClick={() => window.open(order.request_photo_url, '_blank')} className="text-[10px] text-indigo-600 font-bold flex items-center gap-1 hover:text-indigo-800">
-        <Image className="w-3 h-3" /> {t.viewRefPhoto}
-      </button>
-    )}
-    {order.po_file_url && (
-      <button onClick={() => window.open(order.po_file_url, '_blank')} className="text-[10px] text-slate-500 font-bold flex items-center gap-1 hover:text-slate-700">
-        <Upload className="w-3 h-3" /> {t.viewPO}
-      </button>
-    )}
-  </div>
-</div>
+                        {/* 1. ITEM DETAILS & BUYER NAME */}
+                        <div className="col-span-3">
+                          <div className="font-bold text-slate-800">
+                            {(order.live_inventory as any)?.make} {(order.live_inventory as any)?.model}
+                          </div>
+                          <div className="text-xs text-slate-500 mt-0.5">
+                            • {(order.live_inventory as any)?.manufacturer} • {(order.live_inventory as any)?.year}
+                          </div>
+                          <div className="text-[11px] font-semibold text-blue-500 flex items-center gap-1 mt-1.5">
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                            {order.profiles?.business_name || 'Unknown Buyer'}
+                          </div>
+                        </div>
                         
-                        <div className="col-span-2 font-bold text-slate-800 text-sm flex md:block justify-between">
+                        {/* 2. PRICE */}
+                        <div className="col-span-2 font-bold text-slate-800 text-sm flex md:block justify-between items-center">
                           <span className="md:hidden text-xs font-normal text-slate-400">Price:</span>
-                          {order.unit_price} MAD
+                          {order.price || 0} MAD
                         </div>
                         
-                        <div className="col-span-1 text-sm text-slate-600 font-medium flex md:block justify-between">
+                        {/* 3. QUANTITY */}
+                        <div className="col-span-1 text-sm text-slate-600 font-medium flex md:block justify-between items-center">
                           <span className="md:hidden text-xs font-normal text-slate-400">Qty:</span>
-                          x{order.quantity_ordered}
+                          x{order.quantity || 1}
                         </div>
                         
-                        <div className="col-span-2 font-bold text-blue-600 text-sm flex md:block justify-between">
+                        {/* 4. TOTAL */}
+                        <div className="col-span-2 font-bold text-blue-600 text-sm flex md:block justify-between items-center">
                           <span className="md:hidden text-xs font-normal text-slate-400">Total:</span>
-                          {order.total_price} MAD
+                          {(order.price || 0) * (order.quantity || 1)} MAD
                         </div>
                         
-                        <div className="col-span-1 flex md:block justify-end">
-                          <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        {/* 5. STATUS */}
+                        <div className="col-span-1 flex md:block items-center"> {/* <-- Removed justify-end */}
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${
                             order.status === 'Completed' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
                             order.status === 'Rejected' ? 'bg-red-50 text-red-600 border border-red-100' :
                             'bg-orange-50 text-orange-600 border border-orange-100'
                           }`}>
                             {order.status}
                           </span>
+                        </div>
+
+                        {/* 6. NEW BDC (PO) COLUMN */}
+                        <div className="col-span-1 flex flex-col gap-2 justify-center items-end mt-2 md:mt-0"> {/* <-- Added items-end to push to right */}
+                          {order.po_file_url && (
+                            <button onClick={() => window.open(order.po_file_url, '_blank')} className="text-[11px] text-blue-600 font-bold flex items-center gap-1 hover:text-blue-800 uppercase">
+                              PDF <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                            </button>
+                          )}
+                          {order.request_photo_url && (
+                            <button onClick={() => window.open(order.request_photo_url, '_blank')} className="text-[10px] text-slate-500 font-bold flex items-center gap-1 hover:text-slate-700">
+                              <Image className="w-3 h-3" /> {t.viewRefPhoto}
+                            </button>
+                          )}
                         </div>
           
                       </div>
