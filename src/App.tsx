@@ -4,11 +4,13 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Package, ShoppingCart, ArrowRightLeft, Plus, Minus, Upload, ScanLine, Pencil, X, Bell, User, Barcode, LogOut, LayoutDashboard, Boxes, ReceiptText, Settings, HeadphonesIcon, AlertTriangle, ChevronDown, Globe, Trash2, AlertCircle, Clock, History, Image, Download, Lock, Unlock, Eye, EyeOff } from 'lucide-react';
+import { Search, Package, ShoppingCart, ArrowRightLeft, Plus, Minus, Upload, ScanLine, Pencil, X, Bell, User, Barcode, MessageSquare, LogOut, LayoutDashboard, Boxes, ReceiptText, Settings, HeadphonesIcon, AlertTriangle, ChevronDown, Globe, Trash2, AlertCircle, Clock, History, Image, Download, Lock, Unlock, Eye, EyeOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Auth from './components/Auth';
 import { useLanguage } from './contexts/LanguageContext';
 import SearchableSelect from './components/SearchableSelect';
+import GlobalSearchModal from "./components/GlobalSearchModal";
+import DiscussionCenter from './components/DiscussionCenter';
 // Look closely at the curly brackets!
 import { supabase } from './supabase';
 // Initialize Supabase client
@@ -507,6 +509,15 @@ export default function App() {
   const [techHud, setTechHud] = useState(false);
   const [techAntenna, setTechAntenna] = useState(false);
   const [techMolding, setTechMolding] = useState(false);
+  const [hasOtherTech, setHasOtherTech] = useState(false);
+  // --- NEW "OTHER" TEXT BOX STATES ---
+  
+  const [customBodyType, setCustomBodyType] = useState('');
+  const [customRainSensor, setCustomRainSensor] = useState('');
+  const [customCamera, setCustomCamera] = useState('');
+  
+  
+  const [customTech, setCustomTech] = useState('');
 
   // Edit Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -546,6 +557,10 @@ export default function App() {
   const [newStaff, setNewStaff] = useState({ firstName: '', surname: '', cin: '', pin: '', id: '' });
   const [showPin, setShowPin] = useState(false);
   const [staffToDelete, setStaffToDelete] = useState<string | null>(null);
+  // --- AI MODAL STATES ---
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalSearchType, setModalSearchType] = useState<'Vehicle' | 'Manufacturer' | 'PartDetail'>('Vehicle');
+  const [modalSnapshot, setModalSnapshot] = useState<any>({});
 
   // The NEW Custom ID Generator Engine (Now works during edits!)
   React.useEffect(() => {
@@ -1712,19 +1727,47 @@ const { error } = await supabase
   const isPositionValid = selectedPosition !== '' && (selectedPosition !== 'Other' || customPosition.trim() !== '');
 
   const isFormValid = 
-    scannedBarcode !== '' && 
-    (selectedBrand !== '' || customBrand !== '') && 
-    (selectedModel !== '' || customModel !== '') && 
-    (selectedYear !== '' || customYear !== '') && 
-    baseGlassType !== '' &&   // <-- Now checks the new Glass Type!
-    bodyType !== '' &&        // <-- Now checks the new Body Type!
-    parseInt(quantity) > 0;
+  scannedBarcode !== '' &&
+  (selectedBrand !== '' || customBrand !== '') &&
+  (selectedModel !== '' || customModel !== '') &&
+  (selectedYear !== '' || customYear !== '') &&
+  baseGlassType !== '' &&  // <-- Your existing rule
+  bodyType !== '' &&       // <-- Your existing rule
+  parseInt(quantity) > 0 &&
+  // --- OUR NEW AI CHECKS ---
+  (rainSensor !== 'OTHER' || customRainSensor.trim() !== '') &&
+  (camera !== 'OTHER' || customCamera.trim() !== '') &&
+  (!hasOtherTech || customTech.trim() !== '');
     // --- THE BOUNCER ---
   // If there is no session memory, STOP the code and show the Login screen!
   if (!session) {
     return <Auth /> 
   }
+  const handleAIResultSelection = (aiData: any) => {
+    setSelectedBrand(aiData.brand || "");
+    setSelectedModel(aiData.model || "");
+    setSelectedYear(aiData.year || "");
+    setSelectedManufacturer(aiData.manufacturer || "");
+    setBaseGlassType(aiData.position || ""); 
+    setBodyType(aiData.bodyType || "");
+    setTint(aiData.tint || "");
 
+    // Clear the typed "Other" text
+    setCustomBrand("");
+    setCustomModel("");
+    setCustomYear("");
+    setCustomManufacturer("");
+    setCustomBodyType("");
+  };
+  // --- PASTE THIS RIGHT BEFORE YOUR RETURN ---
+  if (window.location.pathname === '/negotiation') {
+    return (
+      <div className="w-screen h-screen bg-slate-50 overflow-hidden">
+        <DiscussionCenter />
+      </div>
+    );
+  }
+  // -------------------------------------------
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans relative overflow-hidden selection:bg-cyan-200">
       {/* Decorative Background Elements for Futuristic Feel */}
@@ -1761,10 +1804,23 @@ const { error } = await supabase
               </button>
             </div>
 
-            <button className="relative p-2 text-slate-500 hover:text-cyan-600 transition-colors rounded-full hover:bg-white/50">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-cyan-500 rounded-full border-2 border-white"></span>
-            </button>
+            <button 
+  onClick={() => {
+    // This forces the browser to open a floating, detached window!
+    window.open(
+      '/negotiation', 
+      'NegotiationWindow', 
+      'width=1100,height=800,left=200,top=100,toolbar=no,menubar=no,location=no,status=no'
+    );
+  }}
+  className="relative p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors"
+  title="Open Negotiation Center"
+>
+  <MessageSquare className="w-5 h-5" />
+  
+  {/* Notification Dot */}
+  <span className="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full border-2 border-white"></span>
+</button>
             <div className="relative">
               <button 
                 onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
@@ -1989,12 +2045,44 @@ const { error } = await supabase
                   ) : (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full ${isRecognized ? 'bg-green-500' : 'bg-amber-500'}`}></div>
-                          <p className="text-sm font-bold text-slate-700">
-                            {isRecognized ? t.recognizedPart : t.newPartDetected}
-                          </p>
-                        </div>
+                        <div className="flex items-center justify-between w-full mb-2">
+  <div className="flex items-center gap-2">
+    <div className={`w-2 h-2 rounded-full ${isRecognized ? 'bg-green-500' : 'bg-amber-500'}`}></div>
+    <p className="text-sm font-bold text-slate-700">
+      {isRecognized ? t.recognizedPart : t.newPartDetected}
+    </p>
+  </div>
+  
+  {/* THE MASTER AI BUTTON */}
+  {/* THE SUPERCHARGED MASTER AI BUTTON */}
+  <button
+    onClick={(e) => { 
+      e.preventDefault(); 
+      // 1. Tell the Modal we are doing a full search
+      setModalSearchType('Vehicle'); 
+      
+      // 2. Collect EVERY piece of data from the form!
+      setModalSnapshot({ 
+        brand: selectedBrand === 'OTHER' ? customBrand : selectedBrand, 
+        model: selectedModel === 'OTHER' ? customModel : selectedModel, 
+        year: selectedYear === 'OTHER' ? customYear : selectedYear,
+        manufacturer: selectedManufacturer === 'OTHER' ? customManufacturer : selectedManufacturer,
+        position: baseGlassType === 'OTHER' ? customPosition : baseGlassType,
+        bodyType: bodyType === 'OTHER' ? customBodyType : bodyType,
+        rainSensor: rainSensor === 'OTHER' ? customRainSensor : rainSensor,
+        camera: camera === 'OTHER' ? customCamera : camera,
+        specialTech: hasOtherTech ? customTech : 'None'
+      });
+      
+      // 3. Open the Modal!
+      setIsModalOpen(true); 
+    }}
+    className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] uppercase tracking-wider font-bold px-3 py-1.5 rounded-md transition-colors shadow-sm flex items-center gap-1"
+  >
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+    Search Global Database
+  </button>
+</div>
                         {isRecognized && !isOverridingMatch && (
                           <button
                             type="button"
@@ -2033,27 +2121,31 @@ const { error } = await supabase
                             {selectedBrand !== 'OTHER' && (
                               <>
                                 <SearchableSelect
-                                  label={t.model}
-                                  options={selectedBrand ? Object.keys(CAR_CATALOG[selectedBrand] || {}) : []}
-                                  value={selectedModel}
-                                  onChange={(val) => {
-                                    setSelectedModel(val);
-                                    setSelectedYear('');
-                                  }}
-                                  disabled={!selectedBrand}
-                                  placeholder={t.selectModel}
-                                  required
-                                />
-                                
-                                <SearchableSelect
-                                  label={t.yearRange}
-                                  options={selectedBrand && selectedModel ? (CAR_CATALOG[selectedBrand]?.[selectedModel] || []) : []}
-                                  value={selectedYear}
-                                  onChange={(val) => setSelectedYear(val)}
-                                  disabled={!selectedModel}
-                                  placeholder={t.selectYear}
-                                  required
-                                />
+  label={t.model}
+  options={selectedBrand ? Object.keys(CAR_CATALOG[selectedBrand] || {}) : []}
+  value={selectedModel}
+  onChange={(val) => {
+    setSelectedModel(val);
+    setSelectedYear('');
+  }}
+  disabled={!selectedBrand}
+  placeholder={t.selectModel}
+  showOtherOption={true}                     /* <-- ADDED THIS */
+  otherLabel={t.otherNotInList}              /* <-- ADDED THIS */
+  required
+/>
+
+<SearchableSelect
+  label={t.yearRange}
+  options={selectedBrand && selectedModel ? (CAR_CATALOG[selectedBrand]?.[selectedModel] || []) : []}
+  value={selectedYear}
+  onChange={(val) => setSelectedYear(val)}
+  disabled={!selectedModel}
+  placeholder={t.selectYear}
+  showOtherOption={true}                     /* <-- ADDED THIS */
+  otherLabel={t.otherNotInList}              /* <-- ADDED THIS */
+  required
+/>
                               </>
                             )}
                           </>
@@ -2075,37 +2167,50 @@ const { error } = await supabase
                         </div>
                       </div>
 
-                      {selectedBrand === 'OTHER' && (
+                      {(selectedBrand === 'OTHER' || selectedModel === 'OTHER' || selectedYear === 'OTHER') && (
                         <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-4">
                           <p className="text-xs font-semibold text-amber-700 flex items-center gap-1">
                             {t.ensureSpelling}
                           </p>
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <input
-                              type="text"
-                              placeholder={t.customBrand}
-                              value={customBrand}
-                              onChange={(e) => setCustomBrand(e.target.value)}
-                              className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
-                              required
-                            />
-                            <input
-                              type="text"
-                              placeholder={t.customModel}
-                              value={customModel}
-                              onChange={(e) => setCustomModel(e.target.value)}
-                              className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
-                              required
-                            />
-                            <input
-                              type="text"
-                              placeholder={t.customYear}
-                              value={customYear}
-                              onChange={(e) => setCustomYear(e.target.value)}
-                              className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
-                              required
-                            />
-                          </div>
+                          <div className="flex flex-col sm:flex-row gap-4 w-full">
+      
+      {/* 1. BRAND: Only shows if Brand is 'OTHER' */}
+      {selectedBrand === 'OTHER' && (
+        <input
+          type="text"
+          placeholder={t.customBrand}
+          value={customBrand}
+          onChange={(e) => setCustomBrand(e.target.value)}
+          className="flex-1 block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
+          required
+        />
+      )}
+
+      {/* 2. MODEL: Shows if Brand is 'OTHER' *OR* Model is 'OTHER' */}
+      {(selectedBrand === 'OTHER' || selectedModel === 'OTHER') && (
+        <input
+          type="text"
+          placeholder={t.customModel}
+          value={customModel}
+          onChange={(e) => setCustomModel(e.target.value)}
+          className="flex-1 block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
+          required
+        />
+      )}
+
+      {/* 3. YEAR: Shows if ANY of them are 'OTHER' */}
+      {(selectedBrand === 'OTHER' || selectedModel === 'OTHER' || selectedYear === 'OTHER') && (
+        <input
+          type="text"
+          placeholder={t.customYear}
+          value={customYear}
+          onChange={(e) => setCustomYear(e.target.value)}
+          className="flex-1 block w-full px-3 py-2.5 border border-amber-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
+          required
+        />
+      )}
+
+    </div>
                         </div>
                       )}
                       
@@ -2168,6 +2273,9 @@ const { error } = await supabase
                     <option value="VL">Vitre porte arrière droite (VL)</option>
                     <option value="VL">Vitre de custode (VL)</option>
                     <option value="DEF">Déflecteur (DEF)</option>
+                    <option value="OTHER" className="font-bold text-blue-600 bg-blue-50">
+  [ + Other / Not in List ]
+</option>
                   </select>
                 </div>
 
@@ -2186,8 +2294,51 @@ const { error } = await supabase
                     <option value="5P">5 Portes (5P)</option>
                     <option value="BRK">Break (BRK)</option>
                     <option value="CP">Coupé (CP)</option>
+                    <option value="OTHER" className="font-bold text-blue-600 bg-blue-50">
+  [ + Other / Not in List ]
+</option>
                   </select>
+
                 </div>
+                {/* POSITION OTHER BOX */}
+{baseGlassType === 'OTHER' && (
+  <div className="col-span-1 sm:col-span-2 p-4 bg-amber-50 border border-amber-200 rounded-xl mt-2">
+    <div className="flex items-center justify-between mb-3">
+      <p className="text-xs font-semibold text-amber-700 flex items-center gap-1">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+        Part Position not found?
+      </p>
+      
+    </div>
+    <input
+      type="text"
+      placeholder="Type custom position (e.g. Rear Left Door)"
+      value={customPosition}
+      onChange={(e) => setCustomPosition(e.target.value)}
+      className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg text-sm focus:ring-2 focus:outline-none focus:ring-amber-400"
+    />
+  </div>
+)}
+
+{/* BODY TYPE OTHER BOX */}
+{bodyType === 'OTHER' && (
+  <div className="col-span-1 sm:col-span-2 p-4 bg-amber-50 border border-amber-200 rounded-xl mt-2">
+    <div className="flex items-center justify-between mb-3">
+      <p className="text-xs font-semibold text-amber-700 flex items-center gap-1">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+        Body Type not found?
+      </p>
+      
+    </div>
+    <input
+      type="text"
+      placeholder="Type custom body type (e.g. 3-Door Hatchback)"
+      value={customBodyType}
+      onChange={(e) => setCustomBodyType(e.target.value)}
+      className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg text-sm focus:ring-2 focus:outline-none focus:ring-amber-400"
+    />
+  </div>
+)}
 
                 {/* Tint (Only shows if VL or LA is selected) */}
                 {(baseGlassType === 'VL' || baseGlassType === 'LA') && (
@@ -2202,13 +2353,16 @@ const { error } = await supabase
                       <option value="CLAIR">Clair / Blanc</option>
                       <option value="FUME">Surteinté / Fumé</option>
                       <option value="BLEU">Bleu</option>
+                      <option value="OTHER" className="font-bold text-blue-600 bg-blue-50">
+  [ + Other / Not in List ]
+</option>
                     </select>
                   </div>
                 )}
               </div>
 
               {/* PB ONLY: Sensors and Cameras */}
-              {baseGlassType === 'PB' && (
+              {(baseGlassType === 'PB' || baseGlassType === 'OTHER') && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-200">
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 mb-1">Détecteur de Pluie / Lumière</label>
@@ -2222,6 +2376,9 @@ const { error } = await supabase
                       <option value="AD CARRE">Détecteur Carré</option>
                       <option value="AD ROND">Détecteur Rond</option>
                       <option value="AD LOSANGE">Détecteur Losange</option>
+                      <option value="OTHER" className="font-bold text-blue-600 bg-blue-50">
+  [ + Other / Not in List ]
+</option>
                     </select>
                   </div>
                   <div>
@@ -2234,6 +2391,9 @@ const { error } = await supabase
                       <option value="">Sans Caméra</option>
                       <option value="+ CAM">1 Caméra (+ CAM)</option>
                       <option value="+ 2 CAM">2 Caméras (+ 2 CAM)</option>
+                      <option value="OTHER" className="font-bold text-blue-600 bg-blue-50">
+  [ + Other / Not in List ]
+</option>
                     </select>
                   </div>
                 </div>
@@ -2268,11 +2428,49 @@ const { error } = await supabase
                       <input type="checkbox" checked={techMolding} onChange={(e) => setTechMolding(e.target.checked)} className="rounded text-cyan-600" />
                       <span>Avec Joint / Encapsulé</span>
                     </label>
+                    <label className="flex items-center space-x-2">
+                    <input 
+                    type="checkbox" 
+                    checked={hasOtherTech} 
+                    onChange={(e) => setHasOtherTech(e.target.checked)} 
+                    className="rounded text-indigo-600"
+                     />
+                    <span className="text-sm font-semibold text-blue-600">[ + Other / Not in List ]</span>
+                  </label>
                   </div>
                 </div>
               )}
+              
 
               {/* The Shorthand Output Box */}
+              {/* SENSOR & CAMERA OTHER BOXES */}
+{(rainSensor === 'OTHER' || camera === 'OTHER') && (
+  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl mb-4">
+    <div className="flex items-center justify-between mb-3">
+      <p className="text-xs font-semibold text-amber-700">Sensors / Cameras not listed?</p>
+    </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {rainSensor === 'OTHER' && (
+        <input
+          type="text"
+          placeholder="Type custom Rain/Light Sensor"
+          value={customRainSensor}
+          onChange={(e) => setCustomRainSensor(e.target.value)}
+          className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg text-sm focus:ring-2 focus:outline-none focus:ring-amber-400"
+        />
+      )}
+      {camera === 'OTHER' && (
+        <input
+          type="text"
+          placeholder="Type custom Camera System"
+          value={customCamera}
+          onChange={(e) => setCustomCamera(e.target.value)}
+          className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg text-sm focus:ring-2 focus:outline-none focus:ring-amber-400"
+        />
+      )}
+    </div>
+  </div>
+)}
               <div className="mt-4 p-3 bg-slate-900 rounded-lg border border-slate-800 shadow-inner">
                  <div className="text-xs text-slate-400 mb-1 uppercase tracking-wider font-semibold">Generated Reference Code</div>
                  <div className="font-mono text-cyan-400 font-bold text-lg">
@@ -2321,6 +2519,27 @@ const { error } = await supabase
                   </button>
                 </div>
               )}
+              
+
+{/* SPECIAL TECHNOLOGIES OTHER BOX */}
+{hasOtherTech && (
+  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl mt-4">
+    <div className="flex items-center justify-between mb-3">
+      <p className="text-xs font-semibold text-amber-700 flex items-center gap-1">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+        Special Technology not listed?
+      </p>
+      
+    </div>
+    <input
+      type="text"
+      placeholder="Type custom technology (e.g. Acoustic Film, HUD Pro)"
+      value={customTech}
+      onChange={(e) => setCustomTech(e.target.value)}
+      className="block w-full px-3 py-2.5 border border-amber-200 rounded-lg focus:ring-2 focus:outline-none focus:ring-amber-400 text-sm"
+    />
+  </div>
+)}
             </div>
             </div>
           )}
@@ -2877,32 +3096,36 @@ const { error } = await supabase
                 {editBrand !== 'OTHER' && (
                   <>
                     <SearchableSelect
-                      label={t.model}
-                      options={editBrand ? Object.keys(CAR_CATALOG[editBrand] || {}) : []}
-                      value={editModel}
-                      onChange={(val) => {
-                        setEditModel(val);
-                        setEditYear('');
-                      }}
-                      disabled={!editBrand}
-                      placeholder={t.selectModel}
-                      required
-                    />
-                    
-                    <SearchableSelect
-                      label={t.yearRange}
-                      options={editBrand && editModel ? (CAR_CATALOG[editBrand]?.[editModel] || []) : []}
-                      value={editYear}
-                      onChange={(val) => setEditYear(val)}
-                      disabled={!editModel}
-                      placeholder={t.selectYear}
-                      required
-                    />
+  label={t.model}
+  options={editBrand ? Object.keys(CAR_CATALOG[editBrand] || {}) : []}
+  value={editModel}
+  onChange={(val) => {
+    setEditModel(val);
+    setEditYear('');
+  }}
+  disabled={!editBrand}
+  placeholder={t.selectModel}
+  showOtherOption={true}                     /* <-- ADDED THIS */
+  otherLabel={t.otherNotInList}              /* <-- ADDED THIS */
+  required
+/>
+
+<SearchableSelect
+  label={t.yearRange}
+  options={editBrand && editModel ? (CAR_CATALOG[editBrand]?.[editModel] || []) : []}
+  value={editYear}
+  onChange={(val) => setEditYear(val)}
+  disabled={!editModel}
+  placeholder={t.selectYear}
+  showOtherOption={true}                     /* <-- ADDED THIS */
+  otherLabel={t.otherNotInList}             /* <-- ADDED THIS */
+  required
+/>
                   </>
                 )}
               </div>
 
-              {editBrand === 'OTHER' && (
+              {(editBrand === 'OTHER' || editModel === 'OTHER' || editYear === 'OTHER') && (
                 <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-4">
                   <p className="text-xs font-semibold text-amber-700 flex items-center gap-1">
                     {t.ensureSpelling}
@@ -3574,6 +3797,18 @@ const { error } = await supabase
           </div>
         </div>
       )}
+      {/* THE AI SEARCH MODAL */}
+      <GlobalSearchModal 
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSelectResult={handleAIResultSelection}
+        searchType={modalSearchType}
+        snapshotData={modalSnapshot}
+        onSelectResult={(data) => {
+          console.log("AI Found:", data);
+          setIsModalOpen(false);
+        }}
+      />
     </div>
   );
 }
