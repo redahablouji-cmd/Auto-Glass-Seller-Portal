@@ -68,13 +68,9 @@ export const discussionService = {
 
   // 3. Send a Message OR an Official Offer
   // 3. Send a Message
-  async sendMessage(
-    discussionId: string, 
-    content: string, 
-    type: 'text' | 'formal_offer' = 'text', 
-    fileUrl: string | null = null,
-    replyToId: string | null = null // <--- NEW PARAMETER
-  ) {
+  // Notice the V2!
+  async sendMessageV2(discussionId: string, content: string, type: 'text' | 'formal_offer' = 'text', fileUrl: string | null = null, replyToId: string | null = null) {
+    
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
@@ -86,7 +82,7 @@ export const discussionService = {
         content: content,
         message_type: type,
         file_url: fileUrl,
-        reply_to_id: replyToId // <--- SAVE IT TO THE DATABASE
+        reply_to_id: replyToId
       }]);
 
     if (error) console.error("Error sending message:", error);

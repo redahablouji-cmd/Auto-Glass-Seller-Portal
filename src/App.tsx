@@ -649,10 +649,36 @@ export default function App() {
     }
   };
 
-  const handleToggleStaffStatus = (id: string) => {
-    setStaffMembers(prev => prev.map(staff => 
-      staff.id === id ? { ...staff, status: staff.status === 'Active' ? 'Blocked' : 'Active' } : staff
-    ));
+  const handleToggleStaffStatus = async (scannerId: string, currentStatus: string) => {
+    // 1. Calculate the new status
+    const newStatus = currentStatus === 'Active' ? 'Blocked' : 'Active';
+
+    // 2. INSTANT UI UPDATE (No Refresh Required!)
+    // This instantly changes the button color on the screen before the database even finishes.
+    // Note: If your state setter is named differently, change 'setStaffMembers' to match it.
+    setStaffMembers(prevMembers => 
+      prevMembers.map(member => 
+        member.id === scannerId ? { ...member, status: newStatus } : member
+      )
+    );
+
+    // 3. Update the database silently in the background
+    const { error } = await supabase
+      .from('retail_staff')
+      .update({ status: newStatus })
+      .eq('scanner_id', scannerId);
+
+    // 4. Safety catch: If the database fails, revert the button back to its old state
+    if (error) {
+      console.error("Failed to update status in Supabase:", error);
+      alert("Network error: Could not save status.");
+      
+      setStaffMembers(prevMembers => 
+        prevMembers.map(member => 
+          member.id === scannerId ? { ...member, status: currentStatus } : member
+        )
+      );
+    }
   };
 
   const openEditStaffModal = (staff: any) => {
@@ -841,6 +867,33 @@ export default function App() {
     };
     fetchProfile();
   }, [session]);
+  // --- HISTORY MODAL STATE & LOGIC ---
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [selectedStaffHistory, setSelectedStaffHistory] = useState<any[]>([]);
+  const [activeStaffName, setActiveStaffName] = useState("");
+
+  const openHistoryModal = async (scannerId: string, staffName: string) => {
+    console.log("=== HISTORY TRAP ===");
+    console.log("1. The ID the button sent is:", scannerId);
+    
+    setActiveStaffName(staffName || "Staff Member");
+    
+    const { data, error } = await supabase
+      .from('inventory_transactions') 
+      .select('*')
+      .eq('staff_scanner_id', scannerId) 
+      .order('created_at', { ascending: false });
+
+    console.log("2. What Supabase found:", data);
+    console.log("3. Any Errors?:", error);
+
+    if (error) {
+      console.error("Error fetching history:", error);
+    } else if (data) {
+      setSelectedStaffHistory(data);
+      setHistoryModalOpen(true);
+    }
+  };
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -3586,12 +3639,12 @@ const { error } = await supabase
                         <td className="px-6 py-4 flex justify-end gap-1.5">
                           {/* 1. The Block/Unblock Button */}
                           <button 
-                            onClick={() => handleToggleStaffStatus(member.id)}
-                            className={`p-2 rounded-lg transition-colors ${member.status === 'Active' ? 'text-amber-500 hover:bg-amber-50' : 'text-green-600 hover:bg-green-50'}`}
-                            title={member.status === 'Active' ? "Block Access" : "Restore Access"}
-                          >
-                            {member.status === 'Active' ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-                          </button>
+    onClick={() => handleToggleStaffStatus(member.id, member.status)} 
+    className={`p-2 rounded-lg transition-colors ${member.status === 'Active' ? 'text-amber-500 hover:bg-amber-50' : 'text-green-600 hover:bg-green-50'}`}
+    title={member.status === 'Active' ? "Block Access" : "Restore Access"}
+  >
+    {member.status === 'Active' ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+  </button>
                           
                           {/* 2. The Edit Button */}
                           <button 
@@ -3611,6 +3664,15 @@ const { error } = await supabase
 >
   <Trash2 className="w-4 h-4" />
 </button>
+{/* The History Button (Upgraded to a Clock) */}
+  {/* The History Button (Upgraded to a Clock) */}
+  <button 
+    onClick={() => openHistoryModal(member.id, member.firstName)}
+    className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+    title="View Transaction History"
+  >
+    🕒
+  </button>
                         </td>
                       </tr>
                     ))
@@ -3809,6 +3871,62 @@ const { error } = await supabase
           setIsModalOpen(false);
         }}
       />
+      {/* --- HISTORY MODAL UI --- */}
+  {historyModalOpen && (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl p-6 max-h-[80vh] flex flex-col">
+        <div className="flex justify-between items-center mb-4 border-b pb-2">
+          <h2 className="text-xl font-bold text-slate-800">
+            Activity Ledger: {activeStaffName}
+          </h2>
+          <button 
+            onClick={() => setHistoryModalOpen(false)}
+            className="text-slate-400 hover:text-slate-600 font-bold text-xl"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1">
+          {selectedStaffHistory.length === 0 ? (
+            <p className="text-slate-500 text-center mt-10">No transactions recorded yet.</p>
+          ) : (
+            <table className="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-slate-600 font-semibold border-b">
+                  <th className="py-3 px-4">Date & Time</th>
+                  <th className="py-3 px-4">Action</th>
+                  <th className="py-3 px-4">Item/Glass ID</th>
+                  <th className="py-3 px-4">Qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedStaffHistory.map((tx, idx) => (
+                  <tr key={idx} className="border-b hover:bg-slate-50">
+                    <td className="py-3 px-4">
+                      {new Date(tx.created_at).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                        tx.transaction_type === 'RESTOCK' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                      }`}>
+                        {tx.transaction_type}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 font-bold text-slate-800">
+                      {tx.car_model_snapshot} 
+                      <span className="block text-xs font-mono text-slate-400 font-normal">{tx.barcode}</span>
+                    </td>
+                    <td className="py-3 px-4 font-mono">1</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  )}
     </div>
   );
 }
